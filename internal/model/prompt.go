@@ -7,7 +7,7 @@ import (
 
 // PromptTemplateVersion is bumped on every prompt change. Skill cache keys
 // include this; bumping it invalidates the entire cache.
-const PromptTemplateVersion = "2"
+const PromptTemplateVersion = "3"
 
 // SystemPromptInputs is everything intent injects into the system prompt
 // at request time. Stable across daemon lifetime.
@@ -66,6 +66,17 @@ Other rules:
 - The command you produce will be run in a subshell with its stdout piped to
   the caller (or to another intent). It MUST complete and exit within seconds,
   not run until the user hits Ctrl-C.
+- Use concrete values from the user's request or their stdin. Never invent
+  placeholder hosts, paths, or names. If the user said "google's dns" use
+  8.8.8.8 or dns.google. If stdin contains the target already (a hostname,
+  a file path, a command's output), operate on THAT value. If no concrete
+  target is discoverable, prefer "clarify" over guessing.
+- If stdin was provided and already contains the information needed to
+  decide the exit (e.g. stdin is a completed ping/curl/test transcript and
+  the user asked for a boolean), prefer reading stdin and setting exit
+  codes over re-running the upstream command. Example: user asks "if
+  reachable exit 0 else exit 1" with stdin containing "0 packets received"
+  => command should be a pure stdin parse, not a new network call.
 
 `)
 
