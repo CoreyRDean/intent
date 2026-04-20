@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"github.com/CoreyRDean/intent/internal/model"
 	"github.com/CoreyRDean/intent/internal/model/llamafile"
 	"github.com/CoreyRDean/intent/internal/model/mock"
+	"github.com/CoreyRDean/intent/internal/verbose"
 )
 
 // buildBackend resolves the configured backend name to a model.Backend.
@@ -102,6 +104,28 @@ func buildBackend(name string, cfg *config.Config, modelOverride string) (model.
 	default:
 		return nil, false, fmt.Errorf("unknown backend: %q", name)
 	}
+}
+
+// buildBackendCtx is the ctx-aware variant used by commands that want
+// verbose logging to cover model I/O. It wraps the chosen backend in a
+// verbose.Backend decorator if a verbose.Logger is present on ctx.
+// The wrapper preserves StructuredBackend capability so `i report`'s
+// capability type-assertion still succeeds through it.
+func buildBackendCtx(ctx context.Context, name string, cfg *config.Config, modelOverride string) (model.Backend, bool, error) {
+	be, fb, err := buildBackend(name, cfg, modelOverride)
+	if err != nil {
+		return be, fb, err
+	}
+	if l := verbose.FromContext(ctx); l.Enabled() {
+		l.Section("backend resolved")
+		l.KV("name", be.Name())
+		if b, ok := be.(*llamafile.Backend); ok {
+			l.KV("endpoint", b.Endpoint)
+			l.KV("model_tag", b.ModelTag)
+		}
+		be = verbose.Backend(l, be)
+	}
+	return be, fb, nil
 }
 
 // printMockFallbackBanner writes a one-line stderr notice when the real backend

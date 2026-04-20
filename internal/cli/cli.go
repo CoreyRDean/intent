@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/CoreyRDean/intent/internal/verbose"
 	"github.com/CoreyRDean/intent/internal/version"
 )
 
@@ -59,6 +60,21 @@ func Run(ctx context.Context, args []string) int {
 		return cmdHelp(ctx, nil)
 	}
 
+	// Install a verbose logger on ctx if -v/--verbose was set. Every
+	// downstream package (engine, backend wrapper, report/gh, etc.)
+	// pulls it from ctx, so commands don't each need to parse the
+	// flag themselves. INTENT_VERBOSE=1 is also honored so users can
+	// enable tracing without editing their shell alias.
+	if globalsConsumed.verbose || os.Getenv("INTENT_VERBOSE") == "1" {
+		l := verbose.Default(true)
+		ctx = verbose.WithLogger(ctx, l)
+		l.Section("intent invocation")
+		l.KV("version", version.Short())
+		l.KV("pid", os.Getpid())
+		l.KV("argv", strings.Join(os.Args, " "))
+		l.KV("cwd", mustCwd())
+	}
+
 	if h, ok := knownSubcommands[args[0]]; ok {
 		return h(ctx, args[1:])
 	}
@@ -67,14 +83,30 @@ func Run(ctx context.Context, args []string) int {
 	return cmdIntent(ctx, args)
 }
 
+func mustCwd() string {
+	s, err := os.Getwd()
+	if err != nil {
+		return "?"
+	}
+	return s
+}
+
 var globalsConsumed = struct {
 	help    bool
 	version bool
+	verbose bool
 }{}
 
-// stripGlobalFlags handles --help / --version anywhere in the arg list.
-// It does NOT strip natural-language-mode flags; those are parsed by cmdIntent.
+// stripGlobalFlags handles --help / --version / -v / --verbose anywhere
+// in the arg list. It does NOT strip natural-language-mode flags;
+// those are parsed by cmdIntent. Consuming -v here means every
+// subcommand (i report, i explain, i model, ...) automatically
+// supports verbose mode without each command re-parsing the flag.
 func stripGlobalFlags(args []string) []string {
+	// Reset per-invocation so the dispatcher is re-entrant in tests.
+	globalsConsumed.help = false
+	globalsConsumed.version = false
+	globalsConsumed.verbose = false
 	out := make([]string, 0, len(args))
 	for _, a := range args {
 		switch a {
@@ -82,6 +114,8 @@ func stripGlobalFlags(args []string) []string {
 			globalsConsumed.help = true
 		case "--version":
 			globalsConsumed.version = true
+		case "-v", "--verbose":
+			globalsConsumed.verbose = true
 		default:
 			out = append(out, a)
 		}
@@ -136,6 +170,8 @@ Flags (in natural-language mode):
 Top-level:
   --version, -V    Print version.
   --help, -h       This help.
+  -v, --verbose    Log model I/O, tool calls, and gh round-trips to stderr.
+                   (also enabled by INTENT_VERBOSE=1)
   --uninstall      Remove binary, daemon, and (with consent) state.
   --update         Equivalent to "update".
 
