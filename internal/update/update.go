@@ -26,10 +26,10 @@ const (
 
 // Release is the trimmed-down view of a GitHub release we care about.
 type Release struct {
-	TagName    string    `json:"tag_name"`
-	Draft      bool      `json:"draft"`
-	Prerelease bool      `json:"prerelease"`
-	HTMLURL    string    `json:"html_url"`
+	TagName     string    `json:"tag_name"`
+	Draft       bool      `json:"draft"`
+	Prerelease  bool      `json:"prerelease"`
+	HTMLURL     string    `json:"html_url"`
 	PublishedAt time.Time `json:"published_at"`
 }
 

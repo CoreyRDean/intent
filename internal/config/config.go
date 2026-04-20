@@ -17,17 +17,17 @@ import (
 
 // Config is the in-memory configuration.
 type Config struct {
-	Backend       string
-	Model         string
-	AutoRun       bool
-	Sandbox       bool
-	MaxToolSteps  int
-	Timeout       time.Duration
-	UpdateChannel string
-	AutoUpdate    bool
-	DaemonEnabled bool
+	Backend               string
+	Model                 string
+	AutoRun               bool
+	Sandbox               bool
+	MaxToolSteps          int
+	Timeout               time.Duration
+	UpdateChannel         string
+	AutoUpdate            bool
+	DaemonEnabled         bool
 	DaemonIdleUnloadAfter time.Duration
-	CacheEnabled  bool
+	CacheEnabled          bool
 
 	// Backend-specific blobs preserved verbatim.
 	Raw map[string]string

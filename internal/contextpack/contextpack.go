@@ -29,10 +29,10 @@ var CuratedBinaries = []string{
 // Pack is the resolved context, ready to be turned into prompt inputs.
 type Pack struct {
 	OS, Arch, Kernel, Distro, Shell string
-	Cwd                              string
-	AvailableBins                    []string
-	GitBranch                        string
-	GitDirty                         bool
+	Cwd                             string
+	AvailableBins                   []string
+	GitBranch                       string
+	GitDirty                        bool
 }
 
 var (

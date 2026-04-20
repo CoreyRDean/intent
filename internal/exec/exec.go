@@ -24,14 +24,14 @@ const (
 
 // Request describes one execution.
 type Request struct {
-	Shell       string         // a shell command line (single line)
-	Script      string         // a script body (multi-line); takes precedence over Shell
-	Interpreter string         // for scripts; e.g. "bash"
+	Shell       string // a shell command line (single line)
+	Script      string // a script body (multi-line); takes precedence over Shell
+	Interpreter string // for scripts; e.g. "bash"
 	Mode        Mode
 	Stdin       io.Reader
 	Stdout      io.Writer
 	Stderr      io.Writer
-	Env         []string       // appended to os.Environ()
+	Env         []string // appended to os.Environ()
 }
 
 // Result is the outcome.

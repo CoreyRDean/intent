@@ -12,17 +12,17 @@ const PromptTemplateVersion = "1"
 // SystemPromptInputs is everything intent injects into the system prompt
 // at request time. Stable across daemon lifetime.
 type SystemPromptInputs struct {
-	OS               string   // linux | darwin | windows
-	Arch             string   // amd64 | arm64
-	Kernel           string   // uname -r
-	Distro           string   // optional
-	Shell            string   // basename of $SHELL
-	Cwd              string
-	AvailableBins    []string // names that exist in $PATH from the curated set
-	GitBranch        string   // empty if not a repo
-	GitDirty         bool
-	ProjectDirectives string  // contents of .intentrc, if any
-	UserContext      []string // --context flags, formatted as "key=value"
+	OS                string // linux | darwin | windows
+	Arch              string // amd64 | arm64
+	Kernel            string // uname -r
+	Distro            string // optional
+	Shell             string // basename of $SHELL
+	Cwd               string
+	AvailableBins     []string // names that exist in $PATH from the curated set
+	GitBranch         string   // empty if not a repo
+	GitDirty          bool
+	ProjectDirectives string   // contents of .intentrc, if any
+	UserContext       []string // --context flags, formatted as "key=value"
 }
 
 // BuildSystemPrompt assembles the system prompt from inputs.

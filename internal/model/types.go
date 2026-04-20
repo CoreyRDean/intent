@@ -178,10 +178,10 @@ type CompleteRequest struct {
 
 // StreamEvent is one event from a streaming backend.
 type StreamEvent struct {
-	Type    string // "token" | "response" | "error" | "final"
-	Token   string
-	Final   *Response
-	Err     error
+	Type  string // "token" | "response" | "error" | "final"
+	Token string
+	Final *Response
+	Err   error
 }
 
 // Backend is implemented by every LLM source.

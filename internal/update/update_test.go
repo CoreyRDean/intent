@@ -10,7 +10,7 @@ func TestSemverLess(t *testing.T) {
 		{"0.1.0", "0.2.0", true},
 		{"1.0.0", "1.0.1", true},
 		{"1.0.0", "1.0.0", false},
-		{"1.0.0-1", "1.0.0", true},   // pre-release < release
+		{"1.0.0-1", "1.0.0", true},       // pre-release < release
 		{"1.0.0-100", "1.0.0-200", true}, // numeric pre sorts numerically
 		{"0.0.1-1745090000", "0.0.1-1745176400", true},
 	}

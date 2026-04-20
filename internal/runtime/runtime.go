@@ -19,10 +19,10 @@ const LlamafileVersion = "0.10.0"
 
 // DefaultModel describes the model we install by default.
 type ModelInfo struct {
-	Name     string
-	Repo     string // huggingface repo
-	File     string // GGUF file name
-	SizeMB   int    // approximate, for progress UX
+	Name   string
+	Repo   string // huggingface repo
+	File   string // GGUF file name
+	SizeMB int    // approximate, for progress UX
 }
 
 var DefaultModel = ModelInfo{
@@ -129,11 +129,11 @@ func download(ctx context.Context, url, dest string, progress Progress) error {
 }
 
 type progressReader struct {
-	r       io.Reader
-	read    int64
-	total   int64
-	cb      Progress
-	last    time.Time
+	r     io.Reader
+	read  int64
+	total int64
+	cb    Progress
+	last  time.Time
 }
 
 func (p *progressReader) Read(b []byte) (int, error) {

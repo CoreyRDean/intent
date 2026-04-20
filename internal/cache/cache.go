@@ -81,14 +81,14 @@ func BinariesFingerprint(available []string) string {
 
 // Entry is one cached response.
 type Entry struct {
-	Key         string          `json:"key"`
-	Prompt      string          `json:"prompt"`
-	Response    *model.Response `json:"response"`
-	CreatedAt   time.Time       `json:"created_at"`
-	LastUsedAt  time.Time       `json:"last_used_at"`
-	UseCount    int             `json:"use_count"`
-	Pinned      bool            `json:"pinned"`
-	PinnedName  string          `json:"pinned_name,omitempty"`
+	Key        string          `json:"key"`
+	Prompt     string          `json:"prompt"`
+	Response   *model.Response `json:"response"`
+	CreatedAt  time.Time       `json:"created_at"`
+	LastUsedAt time.Time       `json:"last_used_at"`
+	UseCount   int             `json:"use_count"`
+	Pinned     bool            `json:"pinned"`
+	PinnedName string          `json:"pinned_name,omitempty"`
 }
 
 // Store is a tiny key→Entry persistent map.

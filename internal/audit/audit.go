@@ -2,6 +2,8 @@
 package audit
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -10,8 +12,6 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
-	"crypto/rand"
-	"crypto/sha256"
 
 	"github.com/CoreyRDean/intent/internal/model"
 	"github.com/CoreyRDean/intent/internal/safety"
@@ -19,21 +19,21 @@ import (
 
 // Entry is one audit row. Field order follows SPEC §3.5.
 type Entry struct {
-	TS              string             `json:"ts"`
-	ID              string             `json:"id"`
-	Version         string             `json:"version"`
-	Backend         string             `json:"backend"`
-	Model           string             `json:"model"`
-	Prompt          string             `json:"prompt"`
-	Context         map[string]any     `json:"context,omitempty"`
-	ModelResponse   *model.Response    `json:"model_response,omitempty"`
-	GuardActions    []safety.Action    `json:"guard_actions,omitempty"`
-	UserDecision    string             `json:"user_decision"`
-	ExecutedCommand string             `json:"executed_command,omitempty"`
-	ExitCode        *int               `json:"exit_code,omitempty"`
-	StdoutHash      string             `json:"stdout_hash,omitempty"`
-	StderrHash      string             `json:"stderr_hash,omitempty"`
-	DurationMS      int64              `json:"duration_ms,omitempty"`
+	TS              string          `json:"ts"`
+	ID              string          `json:"id"`
+	Version         string          `json:"version"`
+	Backend         string          `json:"backend"`
+	Model           string          `json:"model"`
+	Prompt          string          `json:"prompt"`
+	Context         map[string]any  `json:"context,omitempty"`
+	ModelResponse   *model.Response `json:"model_response,omitempty"`
+	GuardActions    []safety.Action `json:"guard_actions,omitempty"`
+	UserDecision    string          `json:"user_decision"`
+	ExecutedCommand string          `json:"executed_command,omitempty"`
+	ExitCode        *int            `json:"exit_code,omitempty"`
+	StdoutHash      string          `json:"stdout_hash,omitempty"`
+	StderrHash      string          `json:"stderr_hash,omitempty"`
+	DurationMS      int64           `json:"duration_ms,omitempty"`
 }
 
 // Logger appends entries to a single audit file under a process-wide lock.

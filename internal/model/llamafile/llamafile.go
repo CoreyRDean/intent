@@ -55,12 +55,12 @@ func (b *Backend) Available(ctx context.Context) error {
 }
 
 type chatReq struct {
-	Model          string         `json:"model,omitempty"`
+	Model          string          `json:"model,omitempty"`
 	Messages       []model.Message `json:"messages"`
-	Temperature    float64        `json:"temperature"`
-	MaxTokens      int            `json:"max_tokens,omitempty"`
+	Temperature    float64         `json:"temperature"`
+	MaxTokens      int             `json:"max_tokens,omitempty"`
 	ResponseFormat *responseFormat `json:"response_format,omitempty"`
-	Seed           *int64         `json:"seed,omitempty"`
+	Seed           *int64          `json:"seed,omitempty"`
 }
 
 type responseFormat struct {

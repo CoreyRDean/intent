@@ -11,8 +11,8 @@ import (
 
 // Dirs holds resolved on-disk locations.
 type Dirs struct {
-	State  string // config, audit log, skills, daemon socket
-	Cache  string // models, runtime binaries, context cache
+	State string // config, audit log, skills, daemon socket
+	Cache string // models, runtime binaries, context cache
 }
 
 // Resolve returns the platform-appropriate Dirs, creating them if missing.

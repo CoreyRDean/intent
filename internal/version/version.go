@@ -4,7 +4,8 @@ package version
 import "fmt"
 
 // Set via -ldflags at build time:
-//   -X github.com/CoreyRDean/intent/internal/version.Version=...
+//
+//	-X github.com/CoreyRDean/intent/internal/version.Version=...
 var (
 	Version   = "dev"     // semver, or "dev" for unreleased
 	Commit    = "none"    // short git SHA

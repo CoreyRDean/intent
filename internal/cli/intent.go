@@ -66,14 +66,14 @@ func parseIntentFlags(args []string) (*intentFlags, error) {
 	// We pre-extract recognized flags and treat the rest as the prompt.
 	known := map[string]bool{
 		"--yes": true, "-y": true,
-		"--dry": true,
+		"--dry":     true,
 		"--sandbox": true,
-		"--ro": true,
-		"--json": true,
-		"--raw": true,
-		"--quiet": true, "-q": true,
-		"--bool": true,
-		"--explain": true,
+		"--ro":      true,
+		"--json":    true,
+		"--raw":     true,
+		"--quiet":   true, "-q": true,
+		"--bool":     true,
+		"--explain":  true,
 		"--no-cache": true,
 	}
 	knownVal := map[string]bool{

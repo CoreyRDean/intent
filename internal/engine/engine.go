@@ -1,7 +1,7 @@
 // Package engine drives one full intent turn:
 //
-//   gather context → call model → run tool calls (loop) → safety guard →
-//   cache lookup → return final Response to the CLI for confirm/exec.
+//	gather context → call model → run tool calls (loop) → safety guard →
+//	cache lookup → return final Response to the CLI for confirm/exec.
 //
 // The engine is backend-agnostic and mode-agnostic. It does not render UI or
 // execute the final command — that is the CLI's job.
@@ -21,23 +21,23 @@ import (
 
 // Options control one turn.
 type Options struct {
-	Backend       model.Backend
-	MaxToolSteps  int
-	UseCache      bool
-	WriteCache    bool
-	UserContext   []string // --context flags
-	ProjectRC     string
-	OnPhase       func(phase string)        // for spinner labels
-	OnToolCall    func(name string, args []byte) // for visibility
+	Backend      model.Backend
+	MaxToolSteps int
+	UseCache     bool
+	WriteCache   bool
+	UserContext  []string // --context flags
+	ProjectRC    string
+	OnPhase      func(phase string)             // for spinner labels
+	OnToolCall   func(name string, args []byte) // for visibility
 }
 
 // Result is what the engine returns.
 type Result struct {
-	Response     *model.Response
-	GuardResult  safety.Result
-	CacheHit     bool
-	CacheKey     string
-	ContextPack  contextpack.Pack
+	Response      *model.Response
+	GuardResult   safety.Result
+	CacheHit      bool
+	CacheKey      string
+	ContextPack   contextpack.Pack
 	ToolStepsUsed int
 }
 
