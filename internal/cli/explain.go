@@ -26,11 +26,12 @@ func cmdExplain(ctx context.Context, args []string) int {
 		return 3
 	}
 	cfg, _ := config.Load(dirs.ConfigPath())
-	be, err := buildBackend(cfg.Backend, cfg, "")
+	be, isFallback, err := buildBackend(cfg.Backend, cfg, "")
 	if err != nil {
 		errf("explain: %v", err)
 		return 3
 	}
+	printMockFallbackBanner(isFallback)
 	store, _ := cache.Open(dirs.SkillsCachePath())
 	eng := engine.New(store)
 	prompt := fmt.Sprintf("Explain in plain English what this shell command does. Do not run it. Set approach=inform and put your explanation in stdout_to_user.\n\nCommand:\n%s", cmd)

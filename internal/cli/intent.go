@@ -181,11 +181,12 @@ func cmdIntent(ctx context.Context, args []string) int {
 	if fl.backend != "" {
 		backendName = fl.backend
 	}
-	be, err := buildBackend(backendName, cfg, fl.modelTag)
+	be, isFallback, err := buildBackend(backendName, cfg, fl.modelTag)
 	if err != nil {
 		errf("backend: %v", err)
 		return 3
 	}
+	printMockFallbackBanner(isFallback)
 
 	// Cache & engine.
 	store, _ := cache.Open(dirs.SkillsCachePath())
