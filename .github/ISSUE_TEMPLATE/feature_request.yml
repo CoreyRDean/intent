@@ -1,0 +1,48 @@
+name: Feature request
+description: Suggest something `intent` should be able to do.
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing a feature. Please describe the **intent** — what you want to be able to do — before proposing a specific design. That gives us the most room to find the right shape.
+
+        Please also skim [INTENT.md](../../INTENT.md) first. It is the project's constitution and answers most "should this exist?" questions.
+  - type: textarea
+    id: intent
+    attributes:
+      label: What do you want to be able to do?
+      description: Describe the goal in plain language, not the proposed feature.
+      placeholder: I want to be able to ...
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How do you do this today?
+      description: What is the current workaround, if any?
+    validations:
+      required: false
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed shape (optional)
+      description: If you have an idea of what this could look like, share it. Otherwise leave blank — we'll discuss.
+    validations:
+      required: false
+  - type: textarea
+    id: alignment
+    attributes:
+      label: Alignment with INTENT.md
+      description: Which item in *What this project IS* does this serve? Does it conflict with anything in *What this project is NOT*?
+    validations:
+      required: true
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have read [INTENT.md](../../INTENT.md).
+          required: true
+        - label: I have searched existing issues and discussions and this is not a duplicate.
+          required: true

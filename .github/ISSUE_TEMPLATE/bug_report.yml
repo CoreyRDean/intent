@@ -1,0 +1,75 @@
+name: Bug report
+description: Something didn't work the way you expected.
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill out the sections below — the more detail, the faster we can help.
+
+        **If this is a security issue, do not file it here.** See [SECURITY.md](../../SECURITY.md) for the private disclosure process.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of what went wrong.
+      placeholder: When I ran `i ...`, I expected X, but Y happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The exact `intent` invocation, plus anything needed to set up the situation.
+      placeholder: |
+        1. Run `i ...`
+        2. Confirm with `[Enter]`
+        3. Observe the error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      placeholder: I expected `intent` to ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: intent version
+      description: Output of `i --version` once it exists. Otherwise the commit SHA you built from.
+    validations:
+      required: false
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and shell
+      placeholder: macOS 15.2 / zsh 5.9
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model backend
+      description: Default local, or which configured backend?
+      placeholder: local (default)
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Audit log entry, if comfortable sharing
+      description: Please redact anything sensitive. Wrap in triple backticks.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have read [INTENT.md](../../INTENT.md) and this report is consistent with the project's scope.
+          required: true
+        - label: I have searched existing issues and this is not a duplicate.
+          required: true

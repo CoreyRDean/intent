@@ -1,0 +1,61 @@
+# Build artifacts
+target/
+build/
+dist/
+out/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Language toolchain caches
+node_modules/
+.pnpm-store/
+.yarn/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.cargo/
+.gradle/
+.go/
+
+# Editor / IDE
+.idea/
+*.iml
+.vscode/
+!.vscode/extensions.json
+*.swp
+*.swo
+.DS_Store
+
+# Local model cache and runtime artifacts (never commit weights)
+models/
+*.gguf
+*.bin
+*.safetensors
+*.onnx
+.cache/
+.intent-cache/
+
+# Logs and audit data
+*.log
+logs/
+audit.jsonl
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Cursor agent state (local-only, do not publish)
+.cursor/hooks/state/
