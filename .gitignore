@@ -1,6 +1,7 @@
 # Build artifacts
 target/
 build/
+bin/
 dist/
 out/
 *.o

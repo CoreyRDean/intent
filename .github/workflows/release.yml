@@ -1,0 +1,162 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.26.x"
+
+jobs:
+  build:
+    name: build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { goos: linux,  goarch: amd64 }
+          - { goos: linux,  goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+
+      - name: derive metadata
+        id: meta
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ver="${REF_NAME#v}"
+          channel=stable
+          if [[ "$ver" == *-* ]]; then
+            tail="${ver##*-}"
+            if [[ "$tail" =~ ^[0-9]+$ ]]; then
+              channel=nightly
+            fi
+          fi
+          {
+            echo "version=$ver"
+            echo "channel=$channel"
+            echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          BUILD_DATE: ${{ steps.meta.outputs.build_date }}
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          out="dist/intent-${GOOS}-${GOARCH}"
+          short_sha="${SHA:0:7}"
+          ldflags="-s -w \
+            -X github.com/CoreyRDean/intent/internal/version.Version=${REF_NAME} \
+            -X github.com/CoreyRDean/intent/internal/version.Commit=${short_sha} \
+            -X github.com/CoreyRDean/intent/internal/version.BuildDate=${BUILD_DATE} \
+            -X github.com/CoreyRDean/intent/internal/version.Channel=${CHANNEL}"
+          go build -trimpath -ldflags "$ldflags" -o "$out" ./cmd/intent
+
+          cp INTENT.md README.md LICENSE dist/
+          tar -C dist -czf "${out}.tar.gz" \
+            "intent-${GOOS}-${GOARCH}" \
+            INTENT.md README.md LICENSE
+          rm -f dist/INTENT.md dist/README.md dist/LICENSE
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: intent-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/intent-${{ matrix.goos }}-${{ matrix.goarch }}*
+          if-no-files-found: error
+
+  release:
+    name: publish github release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: classify channel
+        id: cls
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ver="${REF_NAME#v}"
+          prerelease=false
+          channel=stable
+          if [[ "$ver" == *-* ]]; then
+            tail="${ver##*-}"
+            if [[ "$tail" =~ ^[0-9]+$ ]]; then
+              channel=nightly
+              prerelease=true
+            else
+              prerelease=true
+            fi
+          fi
+          {
+            echo "prerelease=$prerelease"
+            echo "channel=$channel"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          shasum -a 256 intent-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: release notes
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          CHANNEL: ${{ steps.cls.outputs.channel }}
+        run: |
+          set -euo pipefail
+          short_sha="${SHA:0:7}"
+          if [ "$CHANNEL" = "nightly" ]; then
+            {
+              echo "Nightly build of intent."
+              echo
+              echo "Built from commit \`${short_sha}\` at $(date -u +%Y-%m-%dT%H:%M:%SZ)."
+              echo
+              echo "These builds may break, change behavior, or eat your homework. They exist so we can dogfood."
+            } > notes.md
+          else
+            {
+              echo "Stable release ${REF_NAME}."
+              echo
+              echo "See [INTENT.md](https://github.com/CoreyRDean/intent/blob/${REF_NAME}/INTENT.md) for the project contract and [docs/SPEC.md](https://github.com/CoreyRDean/intent/blob/${REF_NAME}/docs/SPEC.md) for the implementation spec."
+            } > notes.md
+          fi
+
+      - name: publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: notes.md
+          prerelease: ${{ steps.cls.outputs.prerelease == 'true' }}
+          generate_release_notes: ${{ steps.cls.outputs.channel == 'stable' }}
+          files: |
+            dist/intent-*
+            dist/SHA256SUMS

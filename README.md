@@ -14,7 +14,18 @@ $ i check if google's dns server is online
 
 It is **local-first** by default (no network required after first run, no prompts leave your machine), **safe by construction** (risk-classified, deterministic guards, audit log), and **composable** (`i ping google's dns | i if reachable exit 0 else exit 1`).
 
-> **Status: pre-alpha.** This repository currently contains the project's intent contract and scaffolding. The binary does not yet exist. See [`INTENT.md`](./INTENT.md) for the full project charter and [open issues](https://github.com/CoreyRDean/intent/issues) for the roadmap.
+> **Status: pre-alpha.** The binary builds and the mock backend round-trips the full prompt → propose → confirm → run loop, but the local model runtime, daemon, and self-update flows are still being wired up. See [`INTENT.md`](./INTENT.md) for the full project charter, [`docs/SPEC.md`](./docs/SPEC.md) for the implementation contract, and [open issues](https://github.com/CoreyRDean/intent/issues) for the roadmap.
+
+## Building from source
+
+```
+git clone https://github.com/CoreyRDean/intent
+cd intent
+make build           # produces ./bin/intent and ./bin/i
+INTENT_FORCE_BACKEND=mock ./bin/i hello   # smoke test without a model
+```
+
+Requires Go 1.26 or newer.
 
 ---
 
@@ -27,11 +38,13 @@ That document is the project's constitution. Every feature, dependency, and desi
 ## Quick links
 
 - [Intent contract](./INTENT.md)
+- [Implementation spec](./docs/SPEC.md)
+- [Architectural decisions](./docs/DECISIONS.md)
+- [Releasing](./docs/RELEASING.md)
 - [Contributing](./CONTRIBUTING.md)
 - [Code of conduct](./CODE_OF_CONDUCT.md)
 - [Security policy](./SECURITY.md)
 - [Issues](https://github.com/CoreyRDean/intent/issues)
-- [Discussions](https://github.com/CoreyRDean/intent/discussions)
 
 ## License
 

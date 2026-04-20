@@ -1,0 +1,54 @@
+# golangci-lint configuration. Conservative on purpose: lint should catch
+# real defects, not enforce style preferences. Style is gofmt's job.
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - gosec
+    - revive
+
+linters-settings:
+  errcheck:
+    # Don't flag deferred Close() and similar — they're handled idiomatically
+    # in the codebase.
+    check-type-assertions: false
+    check-blank: false
+    exclude-functions:
+      - (io.Closer).Close
+      - (*os.File).Close
+      - (*bufio.Writer).Flush
+      - fmt.Fprintf
+      - fmt.Fprintln
+      - fmt.Fprint
+  revive:
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: error-return
+      - name: error-strings
+      - name: increment-decrement
+      - name: var-declaration
+  gosec:
+    excludes:
+      # G204: subprocess with variable command — that's literally the entire
+      # job description of this binary.
+      - G204
+      # G306: file perms 0644 — fine for non-secret outputs.
+      - G306
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters: [gosec, errcheck]
+    - linters: [staticcheck]
+      text: "SA1029"  # context.Background should be replaced with context.TODO

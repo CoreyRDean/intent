@@ -1,0 +1,69 @@
+name: nightly
+
+# Tags HEAD of main with v{next-semver}-{unix-timestamp} and pushes the tag,
+# which triggers the `release` workflow. See docs/DECISIONS.md D-005.
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: configure git
+        run: |
+          git config user.name "intent-nightly[bot]"
+          git config user.email "intent-nightly@users.noreply.github.com"
+
+      - name: compute next nightly tag
+        id: tag
+        run: |
+          set -euo pipefail
+          last_stable="$(git tag --list 'v*' --sort=-version:refname \
+            | grep -Ev '^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$' \
+            | head -n1 || true)"
+          if [ -z "$last_stable" ]; then
+            base="0.0.0"
+          else
+            base="${last_stable#v}"
+          fi
+          IFS=. read -r M m p <<< "$base"
+          next="${M}.${m}.$((p + 1))"
+          ts=$(date -u +%s)
+          tag="v${next}-${ts}"
+          echo "Computed nightly tag: $tag (from base $base)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: skip if HEAD already tagged
+        id: skip
+        run: |
+          set -euo pipefail
+          existing="$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$' || true)"
+          if [ -n "$existing" ]; then
+            echo "HEAD already has nightly tag(s): $existing — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: create and push tag
+        if: steps.skip.outputs.skip != 'true'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git tag -a "$TAG" -m "nightly: $TAG"
+          git push origin "$TAG"
