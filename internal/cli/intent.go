@@ -136,6 +136,17 @@ func parseIntentFlags(args []string) (*intentFlags, error) {
 	if !stdinTTY && os.Getenv("INTENT_PIPE_FROM") == "intent" {
 		out.json = true
 	}
+	// Piped stdin means there is no usable TTY to read a y/n from, so
+	// the interactive confirm path would hard-fail every time. The
+	// composability story in the README (`i A | i B`, `cat f | i X`)
+	// only works if piped stdin implies consent for auto-run-eligible
+	// risk levels. This is the same guarantee the user gets from -y:
+	// safe and network auto-run, mutates/destructive/sudo still
+	// refuse because implicit approval through a pipe is not enough
+	// authority for those. See SPEC.md §auto-run for the policy.
+	if !stdinTTY {
+		out.yes = true
+	}
 	if out.ro {
 		out.sandbox = true
 	}
@@ -376,7 +387,11 @@ func cmdIntent(ctx context.Context, args []string) int {
 	decision := tui.DecisionConfirm
 	if !autoConfirm {
 		if !tui.IsTTY(os.Stdin) || !tui.IsTTY(os.Stderr) {
-			errf("intent: confirmation required (risk=%s) but no TTY available; pass --yes for safe/network or run interactively", resp.Risk)
+			// We already promote piped-stdin to --yes for
+			// auto-run-eligible risks. If we still end up here, the
+			// risk is too high to auto-confirm through a pipe (e.g.
+			// mutates/destructive/sudo). Be explicit about why.
+			errf("intent: refusing to auto-run risk=%s without a TTY; re-run interactively or reduce the scope of the request", resp.Risk)
 			auditEntry.UserDecision = "cancelled"
 			if lerr == nil {
 				_ = logger.Append(auditEntry)
