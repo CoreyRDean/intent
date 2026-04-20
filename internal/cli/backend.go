@@ -15,38 +15,51 @@ import (
 )
 
 // buildBackend resolves the configured backend name to a model.Backend.
+// The second return value is true only when the requested backend was
+// unavailable and we silently fell back to the mock — callers use this to
+// surface a per-invocation warning so users aren't left confused.
 //
 // In v1 we wire: mock, llamafile-local, llamafile-network, ollama (as a
 // llamafile-shaped HTTP), openai (as a llamafile-shaped HTTP). The grammar
 // constraint is the same across all of them; the only differences are the
 // endpoint and the auth header.
-func buildBackend(name string, cfg *config.Config, modelOverride string) (model.Backend, error) {
+func buildBackend(name string, cfg *config.Config, modelOverride string) (model.Backend, bool, error) {
 	if v := os.Getenv("INTENT_FORCE_BACKEND"); v != "" {
 		name = v
 	}
 	switch name {
 	case "mock":
-		return mock.New(), nil
+		return mock.New(), false, nil
 	case "llamafile-local":
-		// In v1 we expect the daemon to have started llamafile and we just
-		// dial 127.0.0.1:8080. If the daemon isn't running and the user has
-		// disabled it, we fall back to mock so `i hello` doesn't hard-fail
-		// for a brand-new install — it still produces a useful, honest
-		// answer that the local model isn't installed.
-		if !endpointReachable("http://127.0.0.1:8080") {
-			fmt.Fprintln(os.Stderr, "intent: local llamafile not reachable; falling back to mock backend")
-			fmt.Fprintln(os.Stderr, "  run `i daemon start` (after `i model pull`) for the real thing")
-			return mock.New(), nil
+		// We expect the daemon (`intentd`) to have started llamafile on
+		// the loopback host:port from config. If nothing's listening, we
+		// fall back to the mock backend so `i hello` doesn't hard-fail
+		// for a brand-new install — instead the mock returns an honest
+		// "the local model isn't installed yet" response.
+		host := cfg.Raw["daemon.host"]
+		if host == "" {
+			host = "127.0.0.1"
 		}
-		b := llamafile.New("http://127.0.0.1:8080")
+		port := cfg.Raw["daemon.port"]
+		if port == "" {
+			port = "18080"
+		}
+		endpoint := fmt.Sprintf("http://%s:%s", host, port)
+		if !endpointReachable(endpoint) {
+			return mock.New(), true, nil
+		}
+		b := llamafile.New(endpoint)
 		if modelOverride != "" {
 			b.ModelTag = modelOverride
 		} else {
 			b.ModelTag = cfg.Model
 		}
-		return b, nil
+		return b, false, nil
 	case "llamafile-network":
-		ep := cfg.Raw["backends.llamafile-network.endpoint"]
+		ep := os.Getenv("INTENT_LLAMAFILE_ENDPOINT")
+		if ep == "" {
+			ep = cfg.Raw["backends.llamafile-network.endpoint"]
+		}
 		if ep == "" {
 			ep = "http://127.0.0.1:8080"
 		}
@@ -54,7 +67,7 @@ func buildBackend(name string, cfg *config.Config, modelOverride string) (model.
 		if modelOverride != "" {
 			b.ModelTag = modelOverride
 		}
-		return b, nil
+		return b, false, nil
 	case "ollama":
 		ep := cfg.Raw["backends.ollama.endpoint"]
 		if ep == "" {
@@ -66,7 +79,7 @@ func buildBackend(name string, cfg *config.Config, modelOverride string) (model.
 		} else if v := cfg.Raw["backends.ollama.model"]; v != "" {
 			b.ModelTag = v
 		}
-		return b, nil
+		return b, false, nil
 	case "openai":
 		ep := cfg.Raw["backends.openai.base_url"]
 		if ep == "" {
@@ -85,10 +98,26 @@ func buildBackend(name string, cfg *config.Config, modelOverride string) (model.
 		} else {
 			b.ModelTag = "gpt-4o-mini"
 		}
-		return b, nil
+		return b, false, nil
 	default:
-		return nil, fmt.Errorf("unknown backend: %q", name)
+		return nil, false, fmt.Errorf("unknown backend: %q", name)
 	}
+}
+
+// printMockFallbackBanner writes a one-line stderr notice when the real backend
+// was unavailable and we fell back to mock. Safe to call on every invocation —
+// it is a no-op when isFallback is false.
+func printMockFallbackBanner(isFallback bool) {
+	if !isFallback {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "[MOCK] real backend unavailable — responses are simulated. Run 'i doctor', 'i model list', or 'i daemon start' to fix.")
+}
+
+// isMockBackend reports whether b is the mock backend (by name).
+// Used by subcommands that cannot function usefully with mock output.
+func isMockBackend(b model.Backend) bool {
+	return b.Name() == "mock"
 }
 
 // endpointReachable does a short-timeout TCP check on the host:port of a URL.

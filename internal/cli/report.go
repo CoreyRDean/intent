@@ -39,9 +39,13 @@ func cmdReport(ctx context.Context, args []string) int {
 
 	dirs, _ := state.Resolve()
 	cfg, _ := config.Load(dirs.ConfigPath())
-	be, err := buildBackend(cfg.Backend, cfg, "")
+	be, _, err := buildBackend(cfg.Backend, cfg, "")
 	if err != nil {
 		errf("report: %v", err)
+		return 3
+	}
+	if isMockBackend(be) {
+		errf("i report requires a real backend — run 'i doctor' to diagnose")
 		return 3
 	}
 	store, _ := cache.Open(dirs.SkillsCachePath())
