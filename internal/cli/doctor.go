@@ -45,9 +45,9 @@ func cmdDoctor(_ context.Context, _ []string) int {
 	check("llamafile runtime",
 		fmt.Sprintf("expected at %s", rt.LlamafilePath()),
 		rt.HaveLlamafile())
-	check("default model",
-		fmt.Sprintf("expected at %s", rt.ModelPath(intentruntime.DefaultModel.File)),
-		rt.HaveModel(intentruntime.DefaultModel.File))
+
+	modelFile, modelStatus := resolveModelCheck(cfg)
+	check("model", fmt.Sprintf("%s — %s", modelStatus, rt.ModelPath(modelFile)), rt.HaveModel(modelFile))
 
 	// Sandbox tooling.
 	switch runtime.GOOS {
@@ -71,6 +71,18 @@ func cmdDoctor(_ context.Context, _ []string) int {
 	}
 	fmt.Println("\nSome checks failed. Run `i init` and `i model pull` to set up missing pieces.")
 	return 1
+}
+
+// resolveModelCheck returns the GGUF filename and a human-readable label
+// describing which model doctor is checking. When cfg is nil or has no model
+// set, it falls back to the default and says so explicitly.
+func resolveModelCheck(cfg *config.Config) (file, label string) {
+	if cfg != nil && cfg.Model != "" {
+		file = intentruntime.ModelFileForName(cfg.Model)
+		return file, fmt.Sprintf("checking: %s", file)
+	}
+	file = intentruntime.DefaultModel.File
+	return file, fmt.Sprintf("no model configured, checking default: %s", file)
 }
 
 func okStr(err error) string {
