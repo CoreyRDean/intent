@@ -11,6 +11,9 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/CoreyRDean/intent/internal/verbose"
 )
 
 // runGH runs `gh` with captured stdout AND stderr so error messages
@@ -20,11 +23,27 @@ import (
 // stderr in the returned error so users can see what GitHub actually
 // complained about (missing label, auth, rate-limit, etc.).
 func runGH(ctx context.Context, args ...string) ([]byte, error) {
+	vl := verbose.FromContext(ctx)
+	vl.Section("gh call")
+	vl.KV("argv", "gh "+strings.Join(args, " "))
+
 	cmd := exec.CommandContext(ctx, "gh", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	t0 := time.Now()
 	err := cmd.Run()
+	elapsed := time.Since(t0).Round(time.Millisecond)
+
+	vl.KV("elapsed", elapsed)
+	vl.KV("exit_code", cmd.ProcessState.ExitCode())
+	if stdout.Len() > 0 {
+		vl.RawBytes("stdout", stdout.Bytes())
+	}
+	if stderr.Len() > 0 {
+		vl.RawBytes("stderr", stderr.Bytes())
+	}
+
 	if err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
