@@ -9,9 +9,11 @@ import (
 	"github.com/CoreyRDean/intent/internal/state"
 )
 
+const modelUsage = "usage: i model (list | pull | use <name> | rm <name>)"
+
 func cmdModel(ctx context.Context, args []string) int {
 	if len(args) == 0 {
-		errf("usage: i model (list | pull | use <name> | rm <name>)")
+		errf(modelUsage)
 		return 1
 	}
 	dirs, err := state.Resolve()
@@ -21,6 +23,9 @@ func cmdModel(ctx context.Context, args []string) int {
 	}
 	rt := intentruntime.New(dirs.Cache)
 	switch args[0] {
+	case "--help", "-h", "help":
+		fmt.Println(modelUsage)
+		return 0
 	case "list":
 		fmt.Printf("default: %s\n", intentruntime.DefaultModel.Name)
 		if rt.HaveModel(intentruntime.DefaultModel.File) {
