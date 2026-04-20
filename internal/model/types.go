@@ -191,6 +191,12 @@ type Backend interface {
 	Complete(ctx context.Context, req CompleteRequest) (*Response, error)
 }
 
+// CacheIdentityProvider lets a backend contribute a stable identity for cache
+// keys when Name() alone is too coarse.
+type CacheIdentityProvider interface {
+	CacheIdentity() string
+}
+
 // StreamingBackend is an optional capability.
 type StreamingBackend interface {
 	Backend

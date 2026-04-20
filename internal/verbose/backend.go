@@ -34,6 +34,12 @@ type vb struct {
 
 func (v *vb) Name() string                        { return v.inner.Name() }
 func (v *vb) Available(ctx context.Context) error { return v.inner.Available(ctx) }
+func (v *vb) CacheIdentity() string {
+	if inner, ok := v.inner.(model.CacheIdentityProvider); ok {
+		return inner.CacheIdentity()
+	}
+	return v.inner.Name()
+}
 
 func (v *vb) Complete(ctx context.Context, req model.CompleteRequest) (*model.Response, error) {
 	v.log.Section("model request (envelope)")

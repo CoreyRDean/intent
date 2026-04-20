@@ -17,6 +17,7 @@ type Backend struct{}
 func New() *Backend { return &Backend{} }
 
 func (b *Backend) Name() string                        { return "mock" }
+func (b *Backend) CacheIdentity() string               { return b.Name() }
 func (b *Backend) Available(ctx context.Context) error { return nil }
 
 // Complete returns a hard-coded response keyed off the last user message.

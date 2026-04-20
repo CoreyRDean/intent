@@ -287,6 +287,7 @@ Append-only JSONL at `<state_dir>/audit.jsonl`. One line per turn. Schema:
   "exit_code": "int?",
   "stdout_hash": "sha256?",
   "stderr_hash": "sha256?",
+  "stderr_excerpt": "string?",
   "duration_ms": "int?"
 }
 ```

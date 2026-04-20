@@ -9,20 +9,20 @@ import (
 func TestIsNoiseName(t *testing.T) {
 	t.Parallel()
 	cases := map[string]bool{
-		"":                true,
-		".hidden":         true,
-		"_internal":       true,
-		"libfoo.so":       true,
-		"libfoo.so.1":     true,
-		"libfoo.dylib":    true,
-		"libfoo.dylib.2":  true,
-		"config.pc":       true,
-		"thing.cmake":     true,
+		"":               true,
+		".hidden":        true,
+		"_internal":      true,
+		"libfoo.so":      true,
+		"libfoo.so.1":    true,
+		"libfoo.dylib":   true,
+		"libfoo.dylib.2": true,
+		"config.pc":      true,
+		"thing.cmake":    true,
 		"really-long-binary-name-" + repeat("x", 40): true,
-		"git":         false,
-		"kubectl":     false,
+		"git":            false,
+		"kubectl":        false,
 		"my-company-cli": false,
-		"node":        false,
+		"node":           false,
 	}
 	for name, want := range cases {
 		if got := isNoiseName(name); got != want {

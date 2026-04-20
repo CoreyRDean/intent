@@ -6,15 +6,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/CoreyRDean/intent/internal/audit"
 	"github.com/CoreyRDean/intent/internal/state"
 )
 
+const fixUsage = "usage: i fix [natural-language flags]"
+
 // cmdFix re-runs the last failing intent with the prior stderr context
-// folded into the prompt. v1 prints a synthesized re-run command for the
-// user to invoke manually; the streaming "fix loop" is Phase 6 polish.
-func cmdFix(_ context.Context, _ []string) int {
+// folded into the prompt.
+func cmdFix(ctx context.Context, args []string) int {
+	if len(args) > 0 {
+		switch args[0] {
+		case "--help", "-h", "help":
+			fmt.Println(fixUsage)
+			return 0
+		}
+	}
 	dirs, err := state.Resolve()
 	if err != nil {
 		errf("fix: %v", err)
@@ -25,21 +34,7 @@ func cmdFix(_ context.Context, _ []string) int {
 		errf("fix: %v", err)
 		return 1
 	}
-	exit := -1
-	if last.ExitCode != nil {
-		exit = *last.ExitCode
-	}
-	fmt.Println("last failed turn:")
-	fmt.Println("  prompt: ", last.Prompt)
-	fmt.Println("  exit:   ", exit)
-	if last.ExecutedCommand != "" {
-		fmt.Println("  command:", last.ExecutedCommand)
-	}
-	fmt.Println()
-	fmt.Println("rerun with:")
-	fmt.Printf("  i %q  # add: \"the previous run failed with exit %d, here is what was attempted: %s\"\n",
-		last.Prompt, exit, last.ExecutedCommand)
-	return 0
+	return cmdIntent(ctx, append(args, buildFixPrompt(last)))
 }
 
 func lastFailed(path string) (*audit.Entry, error) {
@@ -65,4 +60,25 @@ func lastFailed(path string) (*audit.Entry, error) {
 		return nil, fmt.Errorf("no failed turn in audit log")
 	}
 	return last, nil
+}
+
+func buildFixPrompt(last *audit.Entry) string {
+	if last == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(strings.TrimSpace(last.Prompt))
+	b.WriteString("\n\nThe previous attempt failed. Keep the same user goal, but adjust the approach so it succeeds instead of repeating the failure.")
+	if last.ExecutedCommand != "" {
+		b.WriteString("\nPreviously executed command:\n")
+		b.WriteString(last.ExecutedCommand)
+	}
+	if last.ExitCode != nil {
+		fmt.Fprintf(&b, "\nExit code: %d", *last.ExitCode)
+	}
+	if last.StderrExcerpt != "" {
+		b.WriteString("\nStderr excerpt:\n")
+		b.WriteString(strings.TrimSpace(last.StderrExcerpt))
+	}
+	return b.String()
 }

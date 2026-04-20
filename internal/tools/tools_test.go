@@ -51,15 +51,15 @@ func TestNamesMatchDispatcher(t *testing.T) {
 
 func TestLooksLikeBinaryName(t *testing.T) {
 	cases := map[string]bool{
-		"ls":                  true,
-		"my-cmd":              true,
-		"Tool_v2.1":           true,
-		"":                    false,
-		"rm -rf":              false,
-		"cd; rm":              false,
-		"`pwd`":               false,
-		"../escape":           false,
-		"path/to/bin":         false,
+		"ls":                    true,
+		"my-cmd":                true,
+		"Tool_v2.1":             true,
+		"":                      false,
+		"rm -rf":                false,
+		"cd; rm":                false,
+		"`pwd`":                 false,
+		"../escape":             false,
+		"path/to/bin":           false,
 		strings.Repeat("a", 65): false,
 	}
 	for name, want := range cases {

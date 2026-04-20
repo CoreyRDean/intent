@@ -459,12 +459,13 @@ execute:
 
 	envExtras := []string{"INTENT_PIPE_FROM=intent"}
 	var stdoutBuf, stderrBuf bytes.Buffer
-	var stdout io.Writer = os.Stdout
-	var stderr io.Writer = os.Stderr
+	var stdout io.Writer = io.MultiWriter(os.Stdout, &stdoutBuf)
 	if fl.json {
-		stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
-		stderr = io.MultiWriter(os.Stderr, &stderrBuf)
+		// In --json mode stdout belongs to the envelope, so capture the
+		// executed command's stdout instead of streaming it directly.
+		stdout = &stdoutBuf
 	}
+	var stderr io.Writer = io.MultiWriter(os.Stderr, &stderrBuf)
 
 	req := xexec.Request{
 		Shell:  resp.Command,
@@ -494,10 +495,23 @@ execute:
 	auditEntry.DurationMS = runRes.Duration.Milliseconds()
 	auditEntry.StdoutHash = audit.HashOutput(stdoutBuf.Bytes())
 	auditEntry.StderrHash = audit.HashOutput(stderrBuf.Bytes())
+	auditEntry.StderrExcerpt = stderrExcerpt(stderrBuf.Bytes())
 	if lerr == nil {
 		_ = logger.Append(auditEntry)
 	}
 	return runRes.ExitCode
+}
+
+func stderrExcerpt(b []byte) string {
+	const limit = 4096
+	s := strings.TrimSpace(string(b))
+	if s == "" {
+		return ""
+	}
+	if len(s) <= limit {
+		return s
+	}
+	return s[:limit] + "\n…"
 }
 
 func decisionLabel(auto bool) string {

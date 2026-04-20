@@ -34,6 +34,11 @@ func run(t *testing.T, env []string, args ...string) (stdout, stderr string, exi
 	t.Helper()
 	stateDir := t.TempDir()
 	cacheDir := t.TempDir()
+	return runWithDirs(t, stateDir, cacheDir, env, args...)
+}
+
+func runWithDirs(t *testing.T, stateDir, cacheDir string, env []string, args ...string) (stdout, stderr string, exitCode int) {
+	t.Helper()
 	cmd := exec.Command(testBinary, args...)
 	baseEnv := []string{
 		"HOME=" + os.Getenv("HOME"),
@@ -137,6 +142,21 @@ func TestMockDryJSON(t *testing.T) {
 	}
 }
 
+func TestMockExecuteJSON(t *testing.T) {
+	stdout, _, exitCode := run(t, []string{"INTENT_FORCE_BACKEND=mock"}, "--yes", "--json", "list", "files")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d", exitCode)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("expected valid JSON, got: %q; err: %v", stdout, err)
+	}
+	gotStdout, _ := result["stdout"].(string)
+	if strings.TrimSpace(gotStdout) == "" {
+		t.Fatalf("expected JSON field stdout to contain executed command output, got: %#v", result)
+	}
+}
+
 func TestSafetyHardRejectDispatch(t *testing.T) {
 	_, _, exitCode := run(t,
 		[]string{"INTENT_FORCE_BACKEND=mock", "INTENT_MOCK_CMD=rm -rf /"},
@@ -144,6 +164,99 @@ func TestSafetyHardRejectDispatch(t *testing.T) {
 	)
 	if exitCode != 4 {
 		t.Fatalf("expected exit 4 (hard reject → refuse), got %d", exitCode)
+	}
+}
+
+func TestFixReattemptsLastFailureUsingStoredStderr(t *testing.T) {
+	stateDir := t.TempDir()
+	cacheDir := t.TempDir()
+	auditPath := filepath.Join(stateDir, "intent", "audit.jsonl")
+	if err := os.MkdirAll(filepath.Dir(auditPath), 0o700); err != nil {
+		t.Fatalf("mkdir audit dir: %v", err)
+	}
+	entry := map[string]any{
+		"ts":               "2026-04-20T00:00:00Z",
+		"id":               "deadbeefdeadbeef",
+		"version":          "dev",
+		"backend":          "mock",
+		"model":            "mock",
+		"prompt":           "list files",
+		"user_decision":    "autorun",
+		"executed_command": "bash -c printf 'boom\\n' >&2; exit 17",
+		"exit_code":        17,
+		"stderr_hash":      "sha256:test",
+		"stderr_excerpt":   "boom\n",
+	}
+	row, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("marshal audit entry: %v", err)
+	}
+	if err := os.WriteFile(auditPath, append(row, '\n'), 0o600); err != nil {
+		t.Fatalf("write audit log: %v", err)
+	}
+
+	stdout, _, exitCode := runWithDirs(
+		t,
+		stateDir,
+		cacheDir,
+		[]string{"INTENT_FORCE_BACKEND=mock"},
+		"fix", "--yes", "--json",
+	)
+	if exitCode != 0 {
+		t.Fatalf("expected fix to succeed, got %d", exitCode)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("expected fix output to be valid JSON, got %q; err: %v", stdout, err)
+	}
+	gotStdout, _ := result["stdout"].(string)
+	if strings.TrimSpace(gotStdout) == "" {
+		t.Fatalf("expected fix JSON stdout to contain rerun command output, got %#v", result)
+	}
+}
+
+func TestHistoryReplayReexecutesPromptByID(t *testing.T) {
+	stateDir := t.TempDir()
+	cacheDir := t.TempDir()
+	auditPath := filepath.Join(stateDir, "intent", "audit.jsonl")
+	if err := os.MkdirAll(filepath.Dir(auditPath), 0o700); err != nil {
+		t.Fatalf("mkdir audit dir: %v", err)
+	}
+	entry := map[string]any{
+		"ts":            "2026-04-20T00:00:00Z",
+		"id":            "cafebabecafebabe",
+		"version":       "dev",
+		"backend":       "mock",
+		"model":         "mock",
+		"prompt":        "list files",
+		"user_decision": "autorun",
+		"exit_code":     0,
+	}
+	row, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("marshal audit entry: %v", err)
+	}
+	if err := os.WriteFile(auditPath, append(row, '\n'), 0o600); err != nil {
+		t.Fatalf("write audit log: %v", err)
+	}
+
+	stdout, _, exitCode := runWithDirs(
+		t,
+		stateDir,
+		cacheDir,
+		[]string{"INTENT_FORCE_BACKEND=mock"},
+		"history", "replay", "cafeba", "--yes", "--json",
+	)
+	if exitCode != 0 {
+		t.Fatalf("expected history replay to succeed, got %d", exitCode)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("expected replay output to be valid JSON, got %q; err: %v", stdout, err)
+	}
+	gotStdout, _ := result["stdout"].(string)
+	if strings.TrimSpace(gotStdout) == "" {
+		t.Fatalf("expected replay JSON stdout to contain rerun command output, got %#v", result)
 	}
 }
 

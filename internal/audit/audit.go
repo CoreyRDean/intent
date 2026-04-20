@@ -33,6 +33,7 @@ type Entry struct {
 	ExitCode        *int            `json:"exit_code,omitempty"`
 	StdoutHash      string          `json:"stdout_hash,omitempty"`
 	StderrHash      string          `json:"stderr_hash,omitempty"`
+	StderrExcerpt   string          `json:"stderr_excerpt,omitempty"`
 	DurationMS      int64           `json:"duration_ms,omitempty"`
 }
 
@@ -63,6 +64,11 @@ func (l *Logger) Append(e Entry) error {
 	if e.ExecutedCommand != "" {
 		if redacted, did := safety.RedactSecrets(e.ExecutedCommand); did {
 			e.ExecutedCommand = redacted
+		}
+	}
+	if e.StderrExcerpt != "" {
+		if redacted, did := safety.RedactSecrets(e.StderrExcerpt); did {
+			e.StderrExcerpt = redacted
 		}
 	}
 	data, err := json.Marshal(e)
