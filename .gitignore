@@ -32,8 +32,10 @@ venv/
 *.swo
 .DS_Store
 
-# Local model cache and runtime artifacts (never commit weights)
-models/
+# Local model cache and runtime artifacts (never commit weights).
+# Anchor to repo root so this does NOT hide internal/models/ — that
+# path is our models catalog Go package, which belongs in the repo.
+/models/
 *.gguf
 *.bin
 *.safetensors
