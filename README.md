@@ -27,6 +27,27 @@ INTENT_FORCE_BACKEND=mock ./bin/i hello   # smoke test without a model
 
 Requires Go 1.26 or newer.
 
+## Running the tests
+
+```bash
+# Unit tests only (fast, no binary build required)
+go test ./internal/safety/... ./internal/update/...
+
+# Full suite including CLI integration smoke tests (builds the binary)
+go test ./...
+
+# Run only the integration smoke tier
+go test ./internal/cli/ -v -run Test
+```
+
+The integration smoke tests in `internal/cli/smoke_test.go` build the binary once in `TestMain`, then run a hermetic suite that covers:
+- CLI dispatch: `--version` / `-V` / `version` subcommand, `--help`, no-args help
+- Mock backend round-trip: `hello` (inform response) and `--dry --json list files` (JSON output)
+- Safety guard integration: a dangerous command is hard-rejected with exit 4 through the full dispatch
+- Config round-trip: `config set` / `config get` using an isolated temp directory
+
+No network, real model, or daemon is required. Set `INTENT_STATE_DIR` and `INTENT_CACHE_DIR` to override state paths; `INTENT_FORCE_BACKEND=mock` to force the mock backend.
+
 ---
 
 ## Shell integration

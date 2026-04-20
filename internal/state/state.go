@@ -46,6 +46,9 @@ func Resolve() (Dirs, error) {
 }
 
 func stateRoot() (string, error) {
+	if x := os.Getenv("INTENT_STATE_DIR"); x != "" {
+		return x, nil
+	}
 	switch runtime.GOOS {
 	case "darwin":
 		home, err := os.UserHomeDir()
@@ -77,6 +80,9 @@ func stateRoot() (string, error) {
 }
 
 func cacheRoot() (string, error) {
+	if x := os.Getenv("INTENT_CACHE_DIR"); x != "" {
+		return x, nil
+	}
 	switch runtime.GOOS {
 	case "darwin":
 		home, err := os.UserHomeDir()

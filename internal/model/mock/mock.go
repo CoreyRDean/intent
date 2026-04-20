@@ -6,6 +6,7 @@ package mock
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	"github.com/CoreyRDean/intent/internal/model"
@@ -22,6 +23,16 @@ func (b *Backend) Available(ctx context.Context) error { return nil }
 // This is intentionally dumb. It exists so the rest of the pipeline can be
 // exercised end-to-end without a real model.
 func (b *Backend) Complete(ctx context.Context, req model.CompleteRequest) (*model.Response, error) {
+	if cmd := os.Getenv("INTENT_MOCK_CMD"); cmd != "" {
+		return &model.Response{
+			IntentSummary: "test-override",
+			Approach:      model.ApproachCommand,
+			Command:       cmd,
+			Description:   "test-override command",
+			Risk:          model.RiskDestructive,
+			Confidence:    model.ConfidenceHigh,
+		}, nil
+	}
 	prompt := lastUser(req.Messages)
 	p := strings.ToLower(prompt)
 
