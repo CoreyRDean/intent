@@ -558,13 +558,17 @@ func emitJSON(resp *model.Response, stdoutBytes []byte, exitCode int) {
 
 // readStdinIfPiped reads stdin only when there is data to consume:
 //   - regular file: read all
-//   - named pipe / fifo: poll with a short deadline; read what is available
+//   - named pipe / fifo: wait up to ~10s for the first byte, then drain
+//     until EOF. 10s is generous enough for chained `i A | i B` where the
+//     upstream process spends seconds in the model and executing a command
+//     before it flushes, but short enough that a supervisor that never
+//     writes (a CI runner, an editor task) doesn't wedge `i hello`.
 //   - TTY or char device: do nothing
 //   - everything else: do nothing (safer than blocking)
 //
-// This makes `i hello` instantly return when launched under a supervisor
-// (e.g. a CI runner, an editor's task runner) that holds stdin open but
-// never writes to it.
+// Once the first byte has arrived we clear the deadline and drain to EOF.
+// That's what the README chain story depends on: the upstream might take
+// several more seconds to produce its full output.
 func readStdinIfPiped() string {
 	info, err := os.Stdin.Stat()
 	if err != nil {
@@ -578,9 +582,15 @@ func readStdinIfPiped() string {
 		b, _ := io.ReadAll(os.Stdin)
 		return string(b)
 	}
-	if (mode & os.ModeNamedPipe) != 0 {
-		// Try to drain with a short deadline. We don't have a portable
-		// non-blocking read; spawn a goroutine and time-bound the wait.
+	if (mode & os.ModeNamedPipe) == 0 {
+		return ""
+	}
+
+	// Named pipe. Wait for the first byte with a deadline; once we see
+	// it, drain to EOF with no deadline.
+	if err := os.Stdin.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		// Platforms where deadlines don't apply fall back to a
+		// best-effort short-poll goroutine.
 		ch := make(chan []byte, 1)
 		go func() {
 			b, _ := io.ReadAll(os.Stdin)
@@ -589,12 +599,25 @@ func readStdinIfPiped() string {
 		select {
 		case b := <-ch:
 			return string(b)
-		case <-time.After(200 * time.Millisecond):
-			// No data available; treat as empty stdin.
+		case <-time.After(10 * time.Second):
 			return ""
 		}
 	}
-	return ""
+	defer func() { _ = os.Stdin.SetReadDeadline(time.Time{}) }()
+
+	first := make([]byte, 1)
+	n, err := os.Stdin.Read(first)
+	if n == 0 {
+		// Deadline exceeded or EOF before any data.
+		return ""
+	}
+	// Got the first byte. Lift the deadline and drain the rest.
+	_ = os.Stdin.SetReadDeadline(time.Time{})
+	if err != nil {
+		return string(first[:n])
+	}
+	rest, _ := io.ReadAll(os.Stdin)
+	return string(first[:n]) + string(rest)
 }
 
 func truncateForPrompt(s string, max int) string {
