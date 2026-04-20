@@ -16,6 +16,7 @@ import (
 	"github.com/CoreyRDean/intent/internal/model"
 	"github.com/CoreyRDean/intent/internal/report"
 	"github.com/CoreyRDean/intent/internal/state"
+	"github.com/CoreyRDean/intent/internal/tui"
 )
 
 func cmdReport(ctx context.Context, args []string) int {
@@ -54,11 +55,26 @@ func cmdReport(ctx context.Context, args []string) int {
 	}
 	userInput := strings.Join(prompt, " ")
 
+	// Progress feedback: local model inference routinely takes 5-30s,
+	// and gh API calls add another second or two. Without a spinner
+	// the CLI looks frozen. We render to stderr so piping output
+	// through e.g. `| pbcopy` still works cleanly. The spinner is a
+	// no-op when stderr isn't a TTY (scripts, CI), so there's no
+	// visual noise outside interactive use.
+	style := tui.DefaultStyle()
+	sp := tui.NewSpinner(style)
+	sp.Start("preparing proposals...")
+	// Belt-and-braces stop — every return path below also stops the
+	// spinner explicitly before printing user-visible output, but
+	// this catches any early error path we miss.
+	defer sp.Stop()
+
 	// Preferred path: if the backend supports schema-enforced structured
 	// output (llamafile, llama.cpp, OpenAI-compatible), ask for proposals
 	// in a task-specific schema. The grammar constrains the model at
 	// token-generation time, so even a 1.5B local model cannot escape
 	// into prose. No parsing heuristics required.
+	sp.SetLabel("asking model for proposals...")
 	proposals, structuredErr := askProposalsStructured(ctx, be, userInput)
 	rawOutput := ""
 
@@ -68,22 +84,33 @@ func cmdReport(ctx context.Context, args []string) int {
 		// that don't support response_format schemas, or if llamafile
 		// returned schema-compliant JSON that was still empty for some
 		// reason.
+		sp.SetLabel("retrying without schema enforcement...")
 		store, _ := cache.Open(dirs.SkillsCachePath())
 		eng := engine.New(store)
 		proposals, rawOutput = askForProposals(ctx, eng, be, userInput, false)
 		if proposals == nil {
+			sp.SetLabel("retrying with strict JSON prompt...")
 			proposals, rawOutput = askForProposals(ctx, eng, be, userInput, true)
 		}
 	}
 	if proposals == nil {
+		// Stop the spinner — the synthesized-proposal path prints a
+		// prompt and reads from stdin, which must not race the
+		// spinner's stderr writes.
+		sp.Stop()
 		proposals = offerSynthesizedProposal(userInput, rawOutput, yes)
 		if proposals == nil {
 			return 1
 		}
+		// Re-arm for the remaining GitHub round-trips.
+		sp = tui.NewSpinner(style)
+		sp.Start("continuing...")
 	}
 
+	sp.SetLabel("checking GitHub for duplicates...")
 	matches, err := report.MatchProposals(ctx, proposals)
 	if err != nil {
+		sp.Stop()
 		errf("report: %v", err)
 		return 3
 	}
@@ -95,7 +122,11 @@ func cmdReport(ctx context.Context, args []string) int {
 	// can't fetch labels for any reason we don't block — we'll just let
 	// gh itself reject bad labels with the real error now that stderr
 	// is captured.
+	sp.SetLabel("fetching repo labels...")
 	known, knownErr := report.RepoLabels(ctx)
+	// Done with background work; stop the spinner now so the per-
+	// proposal output below is the first thing the user sees.
+	sp.Stop()
 	if knownErr != nil {
 		errf("report: could not fetch repo labels (%v); will pass through as-is", knownErr)
 	}
@@ -158,15 +189,23 @@ func cmdReport(ctx context.Context, args []string) int {
 	return 0
 }
 
+// confirmReport is the per-proposal interactive check. Defaults to
+// YES because the user explicitly invoked `i report` intending to
+// file issues — asking them to type "y" for every proposal after
+// they already chose to report is noise. Pressing Enter (or y / yes)
+// proceeds; only an explicit n / no / anything-else declines.
 func confirmReport(yes bool) bool {
 	if yes {
 		return true
 	}
-	fmt.Print("  proceed? [y/N] ")
+	fmt.Print("  proceed? [Y/n] ")
 	r := bufio.NewReader(os.Stdin)
 	line, _ := r.ReadString('\n')
 	line = strings.TrimSpace(strings.ToLower(line))
-	return line == "y" || line == "yes"
+	if line == "" || line == "y" || line == "yes" {
+		return true
+	}
+	return false
 }
 
 func trim(s string, n int) string {
@@ -460,11 +499,14 @@ func offerSynthesizedProposal(userInput, rawModelOutput string, autoYes bool) []
 	fmt.Fprintln(os.Stderr, "  (body will be your original input plus the raw model context.)")
 
 	if !autoYes {
-		fmt.Fprint(os.Stderr, "  create this single issue instead? [y/N] ")
+		// Default Y: the user explicitly asked to report, and declining
+		// this fallback means they get nothing. If the degraded shape
+		// isn't acceptable they can still cancel by typing 'n'.
+		fmt.Fprint(os.Stderr, "  create this single issue instead? [Y/n] ")
 		r := bufio.NewReader(os.Stdin)
 		line, _ := r.ReadString('\n')
 		line = strings.TrimSpace(strings.ToLower(line))
-		if line != "y" && line != "yes" {
+		if line != "" && line != "y" && line != "yes" {
 			return nil
 		}
 	}
