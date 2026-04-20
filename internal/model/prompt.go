@@ -7,7 +7,7 @@ import (
 
 // PromptTemplateVersion is bumped on every prompt change. Skill cache keys
 // include this; bumping it invalidates the entire cache.
-const PromptTemplateVersion = "3"
+const PromptTemplateVersion = "4"
 
 // SystemPromptInputs is everything intent injects into the system prompt
 // at request time. Stable across daemon lifetime.
@@ -59,10 +59,12 @@ Other rules:
 - If you generate a write or delete that targets a path outside the user's cwd, $HOME, or /tmp, classify destructive.
 - Commands MUST terminate on their own. Never emit an unbounded streaming
   command unless the user explicitly asked for "watch", "follow", "stream",
-  "tail -f", or similar. Concrete rules: ping always uses -c N (default -c 1),
-  tail never uses -f unless asked, top/htop/btop are replaced with a single
-  snapshot (ps / top -l 1 -n N), curl never uses --no-buffer / --progress,
-  docker logs never uses -f, kubectl logs never uses -f.
+  "tail -f", or similar. Concrete rules: ping always uses -c 1 unless the
+  user explicitly asked for multiple samples (e.g. "ping 5 times",
+  "10 pings", "average over N tries"); tail never uses -f unless asked;
+  top/htop/btop are replaced with a single snapshot (ps / top -l 1 -n N);
+  curl never uses --no-buffer / --progress; docker logs never uses -f;
+  kubectl logs never uses -f.
 - The command you produce will be run in a subshell with its stdout piped to
   the caller (or to another intent). It MUST complete and exit within seconds,
   not run until the user hits Ctrl-C.
