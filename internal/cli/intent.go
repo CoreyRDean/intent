@@ -19,6 +19,7 @@ import (
 	"github.com/CoreyRDean/intent/internal/model"
 	"github.com/CoreyRDean/intent/internal/state"
 	"github.com/CoreyRDean/intent/internal/tui"
+	"github.com/CoreyRDean/intent/internal/verbose"
 	"github.com/CoreyRDean/intent/internal/version"
 )
 
@@ -199,12 +200,26 @@ func cmdIntent(ctx context.Context, args []string) int {
 	if fl.backend != "" {
 		backendName = fl.backend
 	}
-	be, isFallback, err := buildBackend(backendName, cfg, fl.modelTag)
+	be, isFallback, err := buildBackendCtx(ctx, backendName, cfg, fl.modelTag)
 	if err != nil {
 		errf("backend: %v", err)
 		return 3
 	}
 	printMockFallbackBanner(isFallback)
+
+	// Top-level verbose breadcrumbs. Safe no-op when -v is off.
+	vl := verbose.FromContext(ctx)
+	vl.Section("intent mode (natural language)")
+	vl.KV("prompt", fl.prompt)
+	vl.KV("stdin_bytes", len(stdinData))
+	vl.KV("timeout", fl.timeout)
+	vl.KV("flags.yes", fl.yes)
+	vl.KV("flags.dry", fl.dry)
+	vl.KV("flags.raw", fl.raw)
+	vl.KV("flags.explain", fl.explain)
+	vl.KV("flags.json", fl.json)
+	vl.KV("flags.sandbox", fl.sandbox)
+	vl.KV("flags.no_cache", fl.noCache)
 
 	// Cache & engine.
 	store, _ := cache.Open(dirs.SkillsCachePath())
@@ -212,7 +227,9 @@ func cmdIntent(ctx context.Context, args []string) int {
 
 	style := tui.DefaultStyle()
 	var sp *tui.Spinner
-	if !fl.quiet && tui.IsTTY(os.Stderr) {
+	// In verbose mode the log stream itself is the progress indicator,
+	// and animating a spinner on the same stderr would garble it.
+	if !fl.quiet && !vl.Enabled() && tui.IsTTY(os.Stderr) {
 		sp = tui.NewSpinner(style)
 		sp.Start("Invoking...")
 		defer sp.Stop()

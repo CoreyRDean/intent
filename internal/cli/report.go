@@ -17,6 +17,7 @@ import (
 	"github.com/CoreyRDean/intent/internal/report"
 	"github.com/CoreyRDean/intent/internal/state"
 	"github.com/CoreyRDean/intent/internal/tui"
+	"github.com/CoreyRDean/intent/internal/verbose"
 )
 
 func cmdReport(ctx context.Context, args []string) int {
@@ -44,7 +45,7 @@ func cmdReport(ctx context.Context, args []string) int {
 	if !ensureBackendReady(ctx, dirs, cfg) {
 		return 3
 	}
-	be, _, err := buildBackend(cfg.Backend, cfg, "")
+	be, _, err := buildBackendCtx(ctx, cfg.Backend, cfg, "")
 	if err != nil {
 		errf("report: %v", err)
 		return 3
@@ -55,15 +56,25 @@ func cmdReport(ctx context.Context, args []string) int {
 	}
 	userInput := strings.Join(prompt, " ")
 
+	vl := verbose.FromContext(ctx)
+	vl.Section("report")
+	vl.KV("user_input", userInput)
+	vl.KV("repo", report.Repo)
+
 	// Progress feedback: local model inference routinely takes 5-30s,
 	// and gh API calls add another second or two. Without a spinner
 	// the CLI looks frozen. We render to stderr so piping output
 	// through e.g. `| pbcopy` still works cleanly. The spinner is a
 	// no-op when stderr isn't a TTY (scripts, CI), so there's no
-	// visual noise outside interactive use.
+	// visual noise outside interactive use. In verbose mode the log
+	// stream itself is the progress indicator, so we skip the
+	// spinner to avoid garbling stderr.
 	style := tui.DefaultStyle()
-	sp := tui.NewSpinner(style)
-	sp.Start("preparing proposals...")
+	var sp *tui.Spinner
+	if !vl.Enabled() {
+		sp = tui.NewSpinner(style)
+		sp.Start("preparing proposals...")
+	}
 	// Belt-and-braces stop — every return path below also stops the
 	// spinner explicitly before printing user-visible output, but
 	// this catches any early error path we miss.
@@ -103,8 +114,10 @@ func cmdReport(ctx context.Context, args []string) int {
 			return 1
 		}
 		// Re-arm for the remaining GitHub round-trips.
-		sp = tui.NewSpinner(style)
-		sp.Start("continuing...")
+		if !vl.Enabled() {
+			sp = tui.NewSpinner(style)
+			sp.Start("continuing...")
+		}
 	}
 
 	sp.SetLabel("checking GitHub for duplicates...")

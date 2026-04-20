@@ -12,6 +12,7 @@ import (
 	"github.com/CoreyRDean/intent/internal/engine"
 	"github.com/CoreyRDean/intent/internal/state"
 	"github.com/CoreyRDean/intent/internal/tui"
+	"github.com/CoreyRDean/intent/internal/verbose"
 )
 
 // cmdExplain reverses the usual flow: given an arbitrary shell command,
@@ -31,12 +32,17 @@ func cmdExplain(ctx context.Context, args []string) int {
 	if !ensureBackendReady(ctx, dirs, cfg) {
 		return 3
 	}
-	be, isFallback, err := buildBackend(cfg.Backend, cfg, "")
+	be, isFallback, err := buildBackendCtx(ctx, cfg.Backend, cfg, "")
 	if err != nil {
 		errf("explain: %v", err)
 		return 3
 	}
 	printMockFallbackBanner(isFallback)
+
+	vl := verbose.FromContext(ctx)
+	vl.Section("explain")
+	vl.KV("command", cmd)
+	verboseOn := vl.Enabled()
 	store, _ := cache.Open(dirs.SkillsCachePath())
 	eng := engine.New(store)
 	prompt := fmt.Sprintf("Explain in plain English what this shell command does. Do not run it. Set approach=inform and put your explanation in stdout_to_user.\n\nCommand:\n%s", cmd)
@@ -48,10 +54,15 @@ func cmdExplain(ctx context.Context, args []string) int {
 	// and is a no-op when stderr isn't a TTY, so piped/scripted use
 	// stays clean.
 	style := tui.DefaultStyle()
-	sp := tui.NewSpinner(style)
-	if sp != nil && tui.IsTTY(os.Stderr) {
-		sp.Start("Invoking...")
-		defer sp.Stop()
+	var sp *tui.Spinner
+	// In verbose mode the log stream itself is the progress indicator,
+	// so don't animate a spinner on the same stderr.
+	if !verboseOn {
+		sp = tui.NewSpinner(style)
+		if sp != nil && tui.IsTTY(os.Stderr) {
+			sp.Start("Invoking...")
+			defer sp.Stop()
+		}
 	}
 
 	res, err := eng.Run(tctx, prompt, engine.Options{
