@@ -63,3 +63,9 @@ Desktop.ini
 
 # Claude Code worktrees (local-only scratch space)
 .claude/worktrees/
+
+# Personal agent memory — AGENTS.md is maintained locally by the
+# continual-learning skill and contains developer-specific preferences,
+# workspace facts, and derived context from private chat transcripts.
+# Never publish in this public repo.
+AGENTS.md
