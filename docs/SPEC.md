@@ -130,7 +130,7 @@ The model — regardless of backend — is required to return JSON conforming to
     "body": "string"
   },
   "tool_call": {
-    "name": "list_dir | read_file | head_file | which | stat | env_get | cwd | os_info | git_status",
+    "name": "list_dir | read_file | head_file | which | stat | env_get | cwd | os_info | git_status | help | grep | find_files | web_fetch | ask_user",
     "arguments": { ... }
   },
   "clarifying_question": "string?",
@@ -172,12 +172,12 @@ The model classifies; the static guard (§3) can override upward but never downw
 
 ### 2.3 Tool catalog (read-only only)
 
-Tools the model may invoke during a multi-step turn. All are read-only and execute without user confirmation. Hard-bounded by `max_tool_steps` (default 5).
+Tools the model may invoke during a multi-step turn. All are read-only (except `ask_user`, which reads one line from the user's TTY) and execute without confirmation. Hard-bounded by `max_tool_steps` (default 12).
 
 | Name | Arguments | Returns |
 |---|---|---|
 | `list_dir` | `{path: string, depth?: int=1, max_entries?: int=200}` | List of `{name, type, size}` |
-| `read_file` | `{path: string, max_bytes?: int=8192}` | `{content, truncated, size}` |
+| `read_file` | `{path: string, max_bytes?: int=8192, start_line?: int, end_line?: int}` | `{content, truncated, size, total_lines?, start_line?, end_line?}` |
 | `head_file` | `{path: string, lines?: int=50}` | `{lines, total_lines}` |
 | `which` | `{name: string}` | `{found: bool, path?: string}` |
 | `stat` | `{path: string}` | `{exists, type, size, perms, mtime}` |
@@ -185,6 +185,11 @@ Tools the model may invoke during a multi-step turn. All are read-only and execu
 | `cwd` | `{}` | `{path}` |
 | `os_info` | `{}` | `{os, arch, kernel, distro, shell}` |
 | `git_status` | `{}` | `{is_repo, branch, dirty, files_changed}` (cwd only) |
+| `help` | `{name: string, max_bytes?: int=8192}` | `{found, path, strategy, output, tried}` — probes `--help`, `-h`, `help`, then `man`. Refuses shell-metachar names. |
+| `grep` | `{pattern: string, path?: string=".", max_matches?: int=100, case_insensitive?: bool}` | `{matches: []string, count, truncated, tool}` — wraps `rg` if available else `grep -rEn`. |
+| `find_files` | `{pattern: string, path?: string=".", max_results?: int=200, type?: "file"\|"dir"\|"any"}` | `{paths: []string, count, truncated, tool}` — wraps `fd` if available else `find`. |
+| `web_fetch` | `{url: string, max_bytes?: int=32768}` | `{status, content_type, body, truncated, url}` — http(s) only; HTML is stripped to text. |
+| `ask_user` | `{question: string, choices?: []string}` | `{answered: bool, answer?: string, error?: string}` — requires an interactive TTY; otherwise `answered=false`. |
 
 Tool calls outside this catalog are rejected and fed back to the model as an error.
 
