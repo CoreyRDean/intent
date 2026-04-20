@@ -170,7 +170,10 @@ func cmdIntent(ctx context.Context, args []string) int {
 	// from a non-TTY supervisor that didn't close stdin). The first-byte
 	// wait is bounded by fl.timeout, so a chained `i A | i B` has room
 	// for A's (possibly interactive) model call and command to finish.
-	stdinData := readStdinIfPiped(fl.timeout)
+	// stdinEOF tells us whether upstream has closed the pipe: if yes,
+	// upstream is done writing to the shared stderr and it's safe for
+	// us to animate our own spinner without clobbering its UI.
+	stdinData, stdinEOF := readStdinIfPiped(fl.timeout)
 
 	// Resolve dirs and config.
 	dirs, err := state.Resolve()
@@ -239,17 +242,16 @@ func cmdIntent(ctx context.Context, args []string) int {
 	eng := engine.New(store)
 
 	style := tui.DefaultStyle()
-	stdinPiped := !tui.IsTTY(os.Stdin)
 	var sp *tui.Spinner
-	// Spinner policy. Render only when stderr is a TTY AND we are not
-	// running downstream of some other process in a shell pipeline.
-	// Rationale: in `i A | i B`, A is still painting its proposal and
-	// confirm prompt on the shared stderr while B starts. If B also
-	// spins, B's animation overwrites A's UI and the user loses the
-	// ability to confirm A. Suppressing B's spinner is a small price;
-	// the upstream process is where the user's attention is.
+	// Spinner policy. Render only when stderr is a TTY AND we are sure
+	// no other process is still painting on the same stderr. The only
+	// case where another process might be painting is when stdin was a
+	// pipe *and* we did not see EOF on it -- i.e. we timed out waiting
+	// for upstream. In every other case (TTY stdin, regular-file stdin,
+	// or named pipe drained to EOF) upstream has either never existed
+	// or has already exited, so it's safe to animate here.
 	// In verbose mode the log stream itself is the progress indicator.
-	if !vl.Enabled() && tui.IsTTY(os.Stderr) && !stdinPiped {
+	if !vl.Enabled() && tui.IsTTY(os.Stderr) && stdinEOF {
 		sp = tui.NewSpinner(style)
 		sp.Start("Invoking...")
 		defer sp.Stop()
@@ -581,21 +583,25 @@ func emitJSON(resp *model.Response, stdoutBytes []byte, exitCode int) {
 //   - everything else (sockets, etc.): do nothing (safer than blocking)
 //
 // Once the first byte has arrived we clear the deadline and drain to EOF.
-func readStdinIfPiped(firstByteWait time.Duration) string {
+// The second return value is true when the read terminated in EOF (upstream
+// closed the pipe, or there was no pipe to begin with). It's false when we
+// bailed out on the deadline, which signals the caller that some upstream
+// process is still running and may still be writing to the shared stderr.
+func readStdinIfPiped(firstByteWait time.Duration) (string, bool) {
 	info, err := os.Stdin.Stat()
 	if err != nil {
-		return ""
+		return "", true
 	}
 	mode := info.Mode()
 	if (mode & os.ModeCharDevice) != 0 {
-		return ""
+		return "", true
 	}
 	if mode.IsRegular() {
 		b, _ := io.ReadAll(os.Stdin)
-		return string(b)
+		return string(b), true
 	}
 	if (mode & os.ModeNamedPipe) == 0 {
-		return ""
+		return "", true
 	}
 	if firstByteWait <= 0 {
 		firstByteWait = 60 * time.Second
@@ -605,7 +611,9 @@ func readStdinIfPiped(firstByteWait time.Duration) string {
 	// it, drain to EOF with no deadline.
 	if err := os.Stdin.SetReadDeadline(time.Now().Add(firstByteWait)); err != nil {
 		// Platforms where deadlines don't apply fall back to a
-		// best-effort goroutine with the same bound.
+		// best-effort goroutine with the same bound. The goroutine
+		// only delivers on full EOF, so a select-timeout means we
+		// did *not* reach EOF.
 		ch := make(chan []byte, 1)
 		go func() {
 			b, _ := io.ReadAll(os.Stdin)
@@ -613,9 +621,9 @@ func readStdinIfPiped(firstByteWait time.Duration) string {
 		}()
 		select {
 		case b := <-ch:
-			return string(b)
+			return string(b), true
 		case <-time.After(firstByteWait):
-			return ""
+			return "", false
 		}
 	}
 	defer func() { _ = os.Stdin.SetReadDeadline(time.Time{}) }()
@@ -623,16 +631,17 @@ func readStdinIfPiped(firstByteWait time.Duration) string {
 	first := make([]byte, 1)
 	n, err := os.Stdin.Read(first)
 	if n == 0 {
-		// Deadline exceeded or EOF before any data.
-		return ""
+		// Deadline exceeded before any data arrived. Upstream still
+		// alive from our point of view; do not assume its UI is done.
+		return "", false
 	}
 	// Got the first byte. Lift the deadline and drain the rest.
 	_ = os.Stdin.SetReadDeadline(time.Time{})
 	if err != nil {
-		return string(first[:n])
+		return string(first[:n]), false
 	}
 	rest, _ := io.ReadAll(os.Stdin)
-	return string(first[:n]) + string(rest)
+	return string(first[:n]) + string(rest), true
 }
 
 func truncateForPrompt(s string, max int) string {
