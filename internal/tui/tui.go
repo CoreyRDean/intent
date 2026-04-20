@@ -115,6 +115,49 @@ func (s *Spinner) Stop() {
 	})
 }
 
+// Suspend temporarily halts animation and returns a func that restarts
+// it on the same label. Used by interactive tools (e.g. ask_user) that
+// need uncluttered stderr while they prompt the user.
+//
+// Unlike Stop, Suspend is reversible: the returned function spawns a
+// fresh animation goroutine without needing a new Spinner allocation.
+// If the spinner never started, Suspend is a no-op and the returned
+// func does nothing.
+func (s *Spinner) Suspend() func() {
+	if s == nil || !s.started.Load() {
+		return func() {}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Capture the last label so we can resume on the same text.
+	var label string
+	if l := s.label.Load(); l != nil {
+		label = *l
+	}
+	// Close the current stop channel and wait for the loop to exit
+	// and clear the line. We do this without going through stopOnce
+	// because this is a pause, not a terminal stop -- Stop() must
+	// still be callable afterwards.
+	close(s.stop)
+	<-s.done
+	fmt.Fprint(s.style.Stderr, "\r\x1b[K")
+	s.started.Store(false)
+
+	return func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		// Re-arm the channels and flip started back on.
+		s.stop = make(chan struct{})
+		s.done = make(chan struct{})
+		s.stopOnce = sync.Once{}
+		s.started.Store(true)
+		l := label
+		s.label.Store(&l)
+		go s.loop()
+	}
+}
+
 func (s *Spinner) loop() {
 	defer close(s.done)
 	t := time.NewTicker(80 * time.Millisecond)
