@@ -260,11 +260,13 @@ func cmdIntent(ctx context.Context, args []string) int {
 	tctx, cancel := context.WithTimeout(ctx, fl.timeout)
 	defer cancel()
 
+	host := &cliToolHost{sp: sp}
 	res, err := eng.Run(tctx, finalPrompt, engine.Options{
 		Backend:      be,
 		MaxToolSteps: cfg.MaxToolSteps,
 		UseCache:     !fl.noCache && cfg.CacheEnabled,
 		WriteCache:   !fl.noCache && cfg.CacheEnabled,
+		ToolHost:     host,
 		OnPhase: func(p string) {
 			if sp != nil {
 				sp.SetLabel(p)
