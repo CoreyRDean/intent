@@ -167,8 +167,10 @@ func cmdIntent(ctx context.Context, args []string) int {
 
 	// Pull stdin if it actually has data. We avoid io.ReadAll on a bare,
 	// keep-open stdin (which would block forever when intent is launched
-	// from a non-TTY supervisor that didn't close stdin).
-	stdinData := readStdinIfPiped()
+	// from a non-TTY supervisor that didn't close stdin). The first-byte
+	// wait is bounded by fl.timeout, so a chained `i A | i B` has room
+	// for A's (possibly interactive) model call and command to finish.
+	stdinData := readStdinIfPiped(fl.timeout)
 
 	// Resolve dirs and config.
 	dirs, err := state.Resolve()
@@ -237,10 +239,17 @@ func cmdIntent(ctx context.Context, args []string) int {
 	eng := engine.New(store)
 
 	style := tui.DefaultStyle()
+	stdinPiped := !tui.IsTTY(os.Stdin)
 	var sp *tui.Spinner
-	// In verbose mode the log stream itself is the progress indicator,
-	// and animating a spinner on the same stderr would garble it.
-	if !fl.quiet && !vl.Enabled() && tui.IsTTY(os.Stderr) {
+	// Spinner policy. Render only when stderr is a TTY AND we are not
+	// running downstream of some other process in a shell pipeline.
+	// Rationale: in `i A | i B`, A is still painting its proposal and
+	// confirm prompt on the shared stderr while B starts. If B also
+	// spins, B's animation overwrites A's UI and the user loses the
+	// ability to confirm A. Suppressing B's spinner is a small price;
+	// the upstream process is where the user's attention is.
+	// In verbose mode the log stream itself is the progress indicator.
+	if !vl.Enabled() && tui.IsTTY(os.Stderr) && !stdinPiped {
 		sp = tui.NewSpinner(style)
 		sp.Start("Invoking...")
 		defer sp.Stop()
@@ -334,8 +343,11 @@ func cmdIntent(ctx context.Context, args []string) int {
 		return 4
 	}
 
-	// Render the proposal and decide.
-	if !fl.quiet && !fl.explain {
+	// Render the proposal on stderr so the user always sees what is
+	// about to run -- even when stdout is piped to the next command.
+	// renderProposal writes to stderr only, so whether stdout is a
+	// TTY is irrelevant here; gate on the surface the user can see.
+	if !fl.explain && tui.IsTTY(os.Stderr) {
 		renderProposal(resp, res.CacheHit, style)
 	}
 
@@ -558,18 +570,18 @@ func emitJSON(resp *model.Response, stdoutBytes []byte, exitCode int) {
 
 // readStdinIfPiped reads stdin only when there is data to consume:
 //   - regular file: read all
-//   - named pipe / fifo: wait up to ~10s for the first byte, then drain
-//     until EOF. 10s is generous enough for chained `i A | i B` where the
-//     upstream process spends seconds in the model and executing a command
-//     before it flushes, but short enough that a supervisor that never
-//     writes (a CI runner, an editor task) doesn't wedge `i hello`.
+//   - named pipe / fifo: wait up to firstByteWait for the first byte, then
+//     drain until EOF. The caller sizes firstByteWait to match the overall
+//     command timeout so a chained `i A | i B` has enough slack while A's
+//     human user reads the proposal and confirms, then A executes, then
+//     flushes to the pipe. A supervisor that holds stdin open but never
+//     writes still unblocks at firstByteWait and the caller proceeds with
+//     empty stdin.
 //   - TTY or char device: do nothing
-//   - everything else: do nothing (safer than blocking)
+//   - everything else (sockets, etc.): do nothing (safer than blocking)
 //
 // Once the first byte has arrived we clear the deadline and drain to EOF.
-// That's what the README chain story depends on: the upstream might take
-// several more seconds to produce its full output.
-func readStdinIfPiped() string {
+func readStdinIfPiped(firstByteWait time.Duration) string {
 	info, err := os.Stdin.Stat()
 	if err != nil {
 		return ""
@@ -585,12 +597,15 @@ func readStdinIfPiped() string {
 	if (mode & os.ModeNamedPipe) == 0 {
 		return ""
 	}
+	if firstByteWait <= 0 {
+		firstByteWait = 60 * time.Second
+	}
 
 	// Named pipe. Wait for the first byte with a deadline; once we see
 	// it, drain to EOF with no deadline.
-	if err := os.Stdin.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+	if err := os.Stdin.SetReadDeadline(time.Now().Add(firstByteWait)); err != nil {
 		// Platforms where deadlines don't apply fall back to a
-		// best-effort short-poll goroutine.
+		// best-effort goroutine with the same bound.
 		ch := make(chan []byte, 1)
 		go func() {
 			b, _ := io.ReadAll(os.Stdin)
@@ -599,7 +614,7 @@ func readStdinIfPiped() string {
 		select {
 		case b := <-ch:
 			return string(b)
-		case <-time.After(10 * time.Second):
+		case <-time.After(firstByteWait):
 			return ""
 		}
 	}
