@@ -64,7 +64,7 @@ const SchemaJSON = `{
           "required": ["name", "arguments"],
           "properties": {
             "name": {
-              "enum": ["list_dir","read_file","head_file","which","stat","env_get","cwd","os_info","git_status"]
+              "enum": ["list_dir","read_file","head_file","which","stat","env_get","cwd","os_info","git_status","help","grep","find_files","web_fetch","ask_user"]
             },
             "arguments": { "type": "object" }
           }
