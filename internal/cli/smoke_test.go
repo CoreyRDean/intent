@@ -137,6 +137,21 @@ func TestMockDryJSON(t *testing.T) {
 	}
 }
 
+func TestMockExecuteJSON(t *testing.T) {
+	stdout, _, exitCode := run(t, []string{"INTENT_FORCE_BACKEND=mock"}, "--yes", "--json", "list", "files")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d", exitCode)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("expected valid JSON, got: %q; err: %v", stdout, err)
+	}
+	gotStdout, _ := result["stdout"].(string)
+	if strings.TrimSpace(gotStdout) == "" {
+		t.Fatalf("expected JSON field stdout to contain executed command output, got: %#v", result)
+	}
+}
+
 func TestSafetyHardRejectDispatch(t *testing.T) {
 	_, _, exitCode := run(t,
 		[]string{"INTENT_FORCE_BACKEND=mock", "INTENT_MOCK_CMD=rm -rf /"},

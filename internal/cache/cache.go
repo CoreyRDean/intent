@@ -24,7 +24,7 @@ type KeyInputs struct {
 	CwdFingerprint        string
 	OS                    string
 	BinariesFingerprint   string
-	ModelName             string
+	BackendIdentity       string
 	PromptTemplateVersion string
 }
 
@@ -35,7 +35,7 @@ func Key(in KeyInputs) string {
 		in.CwdFingerprint,
 		in.OS,
 		in.BinariesFingerprint,
-		in.ModelName,
+		in.BackendIdentity,
 		in.PromptTemplateVersion,
 	}
 	h := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))

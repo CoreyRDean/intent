@@ -37,6 +37,10 @@ func New(endpoint string) *Backend {
 
 func (b *Backend) Name() string { return "llamafile" }
 
+func (b *Backend) CacheIdentity() string {
+	return strings.Join([]string{b.Name(), b.Endpoint, b.ModelTag}, "|")
+}
+
 // Available pings /health.
 func (b *Backend) Available(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, b.Endpoint+"/health", nil)

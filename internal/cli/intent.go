@@ -462,7 +462,9 @@ execute:
 	var stdout io.Writer = os.Stdout
 	var stderr io.Writer = os.Stderr
 	if fl.json {
-		stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
+		// In --json mode stdout belongs to the envelope, so capture the
+		// executed command's stdout instead of streaming it directly.
+		stdout = &stdoutBuf
 		stderr = io.MultiWriter(os.Stderr, &stderrBuf)
 	}
 

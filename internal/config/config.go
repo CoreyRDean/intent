@@ -1,7 +1,6 @@
 // Package config loads and writes intent's TOML configuration.
 // We use a tiny hand-rolled TOML reader/writer to avoid pulling in a dependency
-// for what is, in v1, a flat key-value file. If config.toml grows nested
-// sections we'll switch to a proper TOML library.
+// for what is, in v1, mostly a flat key-value file plus dotted table sections.
 package config
 
 import (
@@ -83,9 +82,14 @@ func read(path string) (*Config, error) {
 	}
 	defer f.Close()
 	sc := bufio.NewScanner(f)
+	section := ""
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "[") {
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			section = strings.TrimSpace(line[1 : len(line)-1])
 			continue
 		}
 		eq := strings.Index(line, "=")
@@ -94,8 +98,12 @@ func read(path string) (*Config, error) {
 		}
 		k := strings.TrimSpace(line[:eq])
 		v := strings.Trim(strings.TrimSpace(line[eq+1:]), `"`)
-		c.Raw[k] = v
-		switch k {
+		fullKey := k
+		if section != "" {
+			fullKey = section + "." + k
+		}
+		c.Raw[fullKey] = v
+		switch fullKey {
 		case "backend":
 			c.Backend = v
 		case "model":

@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/CoreyRDean/intent/internal/cache"
 	"github.com/CoreyRDean/intent/internal/contextpack"
@@ -78,7 +79,7 @@ func (e *Engine) Run(ctx context.Context, prompt string, opts Options) (*Result,
 		CwdFingerprint:        cache.CwdFingerprint(pack.Cwd, ""),
 		OS:                    pack.OS,
 		BinariesFingerprint:   cache.BinariesFingerprint(pack.AvailableBins),
-		ModelName:             opts.Backend.Name(),
+		BackendIdentity:       backendCacheIdentity(opts.Backend),
 		PromptTemplateVersion: model.PromptTemplateVersion,
 	})
 	res.CacheKey = key
@@ -187,6 +188,18 @@ func (e *Engine) Run(ctx context.Context, prompt string, opts Options) (*Result,
 	}
 
 	return nil, fmt.Errorf("engine: exhausted tool-call loop without returning")
+}
+
+func backendCacheIdentity(b model.Backend) string {
+	if b == nil {
+		return ""
+	}
+	if provider, ok := b.(model.CacheIdentityProvider); ok {
+		if id := strings.TrimSpace(provider.CacheIdentity()); id != "" {
+			return id
+		}
+	}
+	return b.Name()
 }
 
 func eligibleForCache(r *model.Response) bool {
