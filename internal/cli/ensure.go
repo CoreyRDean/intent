@@ -12,6 +12,7 @@ import (
 
 	"github.com/CoreyRDean/intent/internal/config"
 	"github.com/CoreyRDean/intent/internal/daemon"
+	"github.com/CoreyRDean/intent/internal/models"
 	intentruntime "github.com/CoreyRDean/intent/internal/runtime"
 	"github.com/CoreyRDean/intent/internal/state"
 	"github.com/CoreyRDean/intent/internal/tui"
@@ -45,8 +46,22 @@ func ensureBackendReady(ctx context.Context, dirs state.Dirs, cfg *config.Config
 	}
 
 	mgr := intentruntime.New(dirs.Cache)
+	// Resolve the *selected* model through the catalog so self-
+	// healing downloads the right thing when the user has switched
+	// to a custom HF repo or a non-default built-in.
+	cat := loadCatalog(dirs.State)
+	id := cfg.Model
+	if id == "" {
+		id = models.DefaultID
+	}
+	selected := cat.Get(id)
+	if selected == nil {
+		// Fall back to the catalog default to at least make progress;
+		// the daemon will complain later if this mismatches config.
+		selected = cat.Default()
+	}
 	haveLF := mgr.HaveLlamafile()
-	haveModel := mgr.HaveModel(cfgModelFile(cfg))
+	haveModel := selected != nil && mgr.HaveModel(models.ModelFilename(selected))
 	interactive := tui.IsTTY(os.Stdin) && tui.IsTTY(os.Stderr)
 
 	// (2) Missing artifacts.
@@ -60,9 +75,9 @@ func ensureBackendReady(ctx context.Context, dirs state.Dirs, cfg *config.Config
 		if !haveLF {
 			fmt.Fprintln(os.Stderr, "  missing runtime: llamafile-"+intentruntime.LlamafileVersion)
 		}
-		if !haveModel {
+		if !haveModel && selected != nil {
 			fmt.Fprintf(os.Stderr, "  missing model:   %s (~%d MB)\n",
-				intentruntime.DefaultModel.Name, intentruntime.DefaultModel.SizeMB)
+				selected.ID, selected.SizeMB)
 		}
 		if !confirmYes("Download now?") {
 			fmt.Fprintln(os.Stderr, "intent: skipped. Run `i model pull` later.")
@@ -77,9 +92,10 @@ func ensureBackendReady(ctx context.Context, dirs state.Dirs, cfg *config.Config
 			}
 			fmt.Fprintln(os.Stderr)
 		}
-		if !haveModel {
-			fmt.Fprintf(os.Stderr, "downloading model (~%d MB)...\n", intentruntime.DefaultModel.SizeMB)
-			if err := mgr.EnsureModel(ctx, intentruntime.DefaultModel, progressCB("model")); err != nil {
+		if !haveModel && selected != nil {
+			fmt.Fprintf(os.Stderr, "downloading model (~%d MB)...\n", selected.SizeMB)
+			mi := intentruntime.FromCatalog(selected)
+			if err := mgr.EnsureModel(ctx, mi, progressCB("model")); err != nil {
 				fmt.Fprintln(os.Stderr)
 				errf("model: %v", err)
 				return false
@@ -127,8 +143,11 @@ func pingDaemon(dirs state.Dirs) bool {
 	return err == nil && resp.OK
 }
 
-// cfgModelFile turns the configured model tag into a GGUF filename.
-// Mirrors the daemon-side mapping so the two stay in lockstep.
+// cfgModelFile turns the configured model tag into a GGUF filename,
+// consulting the catalog (built-in + custom) so the mapping stays in
+// lockstep with what `i model use` actually wrote. Falls back to the
+// legacy best-effort "tag + .gguf" for bare config tags that don't
+// resolve, since older configs may predate the catalog.
 func cfgModelFile(cfg *config.Config) string {
 	tag := cfg.Model
 	if tag == "" {
@@ -138,6 +157,23 @@ func cfgModelFile(cfg *config.Config) string {
 		return tag
 	}
 	return tag + ".gguf"
+}
+
+// selectedModelFile resolves the configured model via the catalog
+// (built-in + custom sidecar at stateDir) and returns its GGUF
+// filename. Prefers this over cfgModelFile when a state dir is
+// available: the sidecar lets us find custom HF files whose names
+// don't match their catalog ID.
+func selectedModelFile(stateDir string, cfg *config.Config) string {
+	cat := loadCatalog(stateDir)
+	id := cfg.Model
+	if id == "" {
+		id = models.DefaultID
+	}
+	if m := cat.Get(id); m != nil {
+		return models.ModelFilename(m)
+	}
+	return cfgModelFile(cfg)
 }
 
 // confirmYes reads a Y/n answer from stdin, defaulting to yes.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/CoreyRDean/intent/internal/config"
 	"github.com/CoreyRDean/intent/internal/installmeta"
+	"github.com/CoreyRDean/intent/internal/models"
 	intentruntime "github.com/CoreyRDean/intent/internal/runtime"
 	"github.com/CoreyRDean/intent/internal/state"
 	"github.com/CoreyRDean/intent/internal/version"
@@ -97,12 +98,23 @@ func cmdInit(ctx context.Context, args []string) int {
 	// "config written, now go figure out three more commands" and
 	// "open a new shell and you're working." Default Yes.
 	mgr := intentruntime.New(dirs.Cache)
+	cat := loadCatalog(dirs.State)
+	// Prefer whatever the user already selected in config over the
+	// catalog default — re-running `i init` should pick up with the
+	// chosen model, not silently swap back to the catalog default.
+	selected := cat.Get(cfg.Model)
+	if selected == nil {
+		selected = cat.Default()
+	}
 	haveLF := mgr.HaveLlamafile()
-	haveModel := mgr.HaveModel(intentruntime.DefaultModel.File)
+	haveModel := selected != nil && mgr.HaveModel(models.ModelFilename(selected))
 	if !haveLF || !haveModel {
 		fmt.Println()
-		fmt.Printf("Download the default local model now? (~%d MB) [Y/n] ",
-			intentruntime.DefaultModel.SizeMB)
+		if selected != nil {
+			fmt.Printf("Download %s now? (~%d MB) [Y/n] ", selected.ID, selected.SizeMB)
+		} else {
+			fmt.Printf("Download the default local model now? [Y/n] ")
+		}
 		pullAnswer := "y"
 		if !autoYes {
 			r := bufio.NewReader(os.Stdin)
@@ -124,9 +136,10 @@ func cmdInit(ctx context.Context, args []string) int {
 				}
 				fmt.Println()
 			}
-			if !haveModel {
-				fmt.Printf("downloading model (~%d MB)...\n", intentruntime.DefaultModel.SizeMB)
-				if err := mgr.EnsureModel(ctx, intentruntime.DefaultModel, progressCB("model")); err != nil {
+			if !haveModel && selected != nil {
+				fmt.Printf("downloading %s (~%d MB)...\n", selected.ID, selected.SizeMB)
+				mi := intentruntime.FromCatalog(selected)
+				if err := mgr.EnsureModel(ctx, mi, progressCB("model")); err != nil {
 					fmt.Println()
 					errf("init: download model: %v", err)
 					fmt.Println("you can retry with `i model pull`.")

@@ -14,6 +14,7 @@ import (
 
 	"github.com/CoreyRDean/intent/internal/config"
 	"github.com/CoreyRDean/intent/internal/daemon"
+	"github.com/CoreyRDean/intent/internal/models"
 	intentruntime "github.com/CoreyRDean/intent/internal/runtime"
 	"github.com/CoreyRDean/intent/internal/state"
 )
@@ -144,13 +145,22 @@ func daemonRunForeground(ctx context.Context, dirs state.Dirs, cfg *config.Confi
 		errf("  expected: %s", mgr.LlamafilePath())
 		return 3
 	}
-	model := cfg.Model
-	if model == "" {
-		model = intentruntime.DefaultModel.File
+	// Resolve the model through the full catalog (built-in + custom)
+	// so the daemon loads exactly what `i model use` selected, even
+	// for user-added HF repos that aren't in the built-in list.
+	cat := loadCatalog(dirs.State)
+	id := cfg.Model
+	if id == "" {
+		id = models.DefaultID
 	}
-	modelPath := mgr.ModelPath(modelFileFor(model))
+	m := cat.Get(id)
+	if m == nil {
+		errf("daemon: current model %q not in catalog; run `i model list` and `i model use <id>`", id)
+		return 1
+	}
+	modelPath := mgr.ModelPath(models.ModelFilename(m))
 	if _, err := os.Stat(modelPath); err != nil {
-		errf("daemon: model missing — run `i model pull` first")
+		errf("daemon: model %q not installed — run `i model pull %s`", id, id)
 		errf("  expected: %s", modelPath)
 		return 3
 	}

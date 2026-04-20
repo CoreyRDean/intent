@@ -93,6 +93,33 @@ Prompts without apostrophes are unaffected and need no quoting.
 
 ---
 
+## Managing models
+
+intent ships with a curated catalog of small-to-medium GGUF models that run locally via [llamafile](https://github.com/mozilla-ai/llamafile). You can also point it at any public Hugging Face GGUF repo.
+
+```sh
+# See what's on offer and which one is current.
+i model list
+
+# Switch to a catalog model (downloads on first use).
+i model use qwen2.5-coder-3b
+
+# Switch to an arbitrary Hugging Face repo. We probe the Hub to pick
+# a sensible quant (Q4_K_M by default), show the size, and download.
+i model use bartowski/Phi-3.5-mini-instruct-GGUF
+i model use bartowski/Phi-3.5-mini-instruct-GGUF:Q6_K   # explicit quant
+
+# Pre-fetch without switching.
+i model pull llama-3.1-8b
+
+# Show details + probe HF for compatibility before committing.
+i model show bartowski/gemma-2-2b-it-GGUF
+```
+
+Custom models are persisted at `custom-models.json` alongside `config.toml`. `i model rm <id>` forgets a custom entry; add `--purge` to also delete the GGUF file from the cache.
+
+---
+
 ## Read this first
 
 [**`INTENT.md`** — what this project is, what it is not, and why it should exist.](./INTENT.md)
