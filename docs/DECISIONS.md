@@ -4,6 +4,14 @@ A short, append-only record of decisions that would otherwise have been lost in 
 
 ---
 
+## D-007 — Lint stack on day one is gofmt + go vet only
+
+**2026-04-19.** Tried wiring `golangci-lint` into CI. The pinned v1.61.0 binary was built against go1.23 and refuses to lint a project targeting go1.26 ("the Go language version used to build golangci-lint is lower than the targeted Go version"). v2 of the linter solves it but uses a new config schema we'd need to port to.
+
+**Decision:** Ship CI with `gofmt -l` and `go vet ./...` only for now. Both genuinely catch defects and are zero-config. Re-introduce a richer linter (golangci-lint v2 or `staticcheck` directly) once we have a real PR queue to test the config against. Tests run with `-race`, which already covers the most common landmine `staticcheck` would have caught early.
+
+---
+
 ## D-006 — Native tool-calling vs. schema-encoded tool-calling
 
 **2026-04-19.** We need multi-step read-only context gathering (e.g., "the model needs to know if `rg` exists before generating a command"). llama.cpp's OpenAI-compatible server supports native `tools` / `tool_calls`, but the field is gated on the build, the model, and the chat template, and several deployment targets we want to support (older Ollama, llamafile pre-0.10) don't reliably surface it.
