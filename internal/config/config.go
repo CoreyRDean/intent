@@ -154,6 +154,18 @@ func Write(path string, c *Config) error {
 	fmt.Fprintf(w, "daemon_enabled = %t\n", c.DaemonEnabled)
 	fmt.Fprintf(w, "daemon_idle_unload_after = %q\n", c.DaemonIdleUnloadAfter.String())
 	fmt.Fprintf(w, "cache_enabled = %t\n", c.CacheEnabled)
+	// Persist unknown raw keys that are not covered by the known struct fields.
+	knownFields := map[string]bool{
+		"backend": true, "model": true, "auto_run": true, "sandbox": true,
+		"max_tool_steps": true, "timeout": true, "update_channel": true,
+		"auto_update": true, "daemon_enabled": true,
+		"daemon_idle_unload_after": true, "cache_enabled": true,
+	}
+	for k, v := range c.Raw {
+		if !knownFields[k] {
+			fmt.Fprintf(w, "%s = %q\n", k, v)
+		}
+	}
 	if err := w.Flush(); err != nil {
 		_ = f.Close()
 		return err
