@@ -130,10 +130,65 @@ func (b *Backend) Complete(ctx context.Context, in model.CompleteRequest) (*mode
 	if err := json.Unmarshal([]byte(content), &out); err != nil {
 		return nil, fmt.Errorf("model output not valid JSON: %w (got %q)", err, truncate(content, 200))
 	}
+	backfillRequiredFields(&out)
 	if err := out.Validate(); err != nil {
-		return nil, fmt.Errorf("model response failed schema: %w", err)
+		return nil, fmt.Errorf("model response failed schema: %w (got %q)", err, truncate(content, 400))
 	}
 	return &out, nil
+}
+
+// backfillRequiredFields supplies sane defaults for fields small local
+// models routinely omit despite the schema. We never silently invent the
+// command itself (that would defeat the whole point); we only fill in
+// metadata the safety guard and TUI need to present the proposal.
+func backfillRequiredFields(r *model.Response) {
+	if r == nil {
+		return
+	}
+	if r.Description == "" {
+		switch {
+		case r.Command != "":
+			r.Description = "Run: " + truncate(r.Command, 120)
+		case r.Script != nil && r.Script.Body != "":
+			first := strings.SplitN(r.Script.Body, "\n", 2)[0]
+			r.Description = "Run script (" + r.Script.Interpreter + "): " + truncate(first, 100)
+		case r.StdoutToUser != "":
+			r.Description = "Print informational answer."
+		case r.ToolCall != nil && r.ToolCall.Name != "":
+			r.Description = "Gather context via " + r.ToolCall.Name + "."
+		case r.ClarifyingQuestion != "":
+			r.Description = "Ask the user a clarifying question."
+		case r.RefusalReason != "":
+			r.Description = "Refuse this request."
+		default:
+			r.Description = "(no description provided by model)"
+		}
+	}
+	if r.Risk == "" {
+		// safe is the most conservative default for risk classification: the
+		// static safety guard will bump it as needed (e.g. detecting `rm -rf`
+		// or `sudo`). Marking unknown as `safe` only matters when the guard
+		// agrees, by definition.
+		r.Risk = model.RiskSafe
+	}
+	if r.Approach == "" {
+		// As a last resort, infer from filled fields. Prefer the most
+		// specific.
+		switch {
+		case r.Script != nil && r.Script.Body != "":
+			r.Approach = model.ApproachScript
+		case r.Command != "":
+			r.Approach = model.ApproachCommand
+		case r.ToolCall != nil && r.ToolCall.Name != "":
+			r.Approach = model.ApproachToolCall
+		case r.StdoutToUser != "":
+			r.Approach = model.ApproachInform
+		case r.ClarifyingQuestion != "":
+			r.Approach = model.ApproachClarify
+		case r.RefusalReason != "":
+			r.Approach = model.ApproachRefuse
+		}
+	}
 }
 
 // stripFences tolerates a model that wraps JSON in ```json ... ``` fences,

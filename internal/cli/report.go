@@ -39,6 +39,9 @@ func cmdReport(ctx context.Context, args []string) int {
 
 	dirs, _ := state.Resolve()
 	cfg, _ := config.Load(dirs.ConfigPath())
+	if !ensureBackendReady(ctx, dirs, cfg) {
+		return 3
+	}
 	be, _, err := buildBackend(cfg.Backend, cfg, "")
 	if err != nil {
 		errf("report: %v", err)

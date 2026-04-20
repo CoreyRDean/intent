@@ -62,18 +62,46 @@ We don't yank-and-rewrite tags. The install script verifies SHA256SUMS, so a rep
 - Post-1.0: standard SemVer rules.
 - The `INTENT.md` constitution and the public CLI surface in `docs/SPEC.md` are the surface area whose breakage requires a major bump.
 
-## Homebrew tap (planned)
+## Homebrew tap
 
-The Homebrew tap will live in a separate repo, `CoreyRDean/homebrew-intent`, with `Formula/intent.rb` regenerated on each stable release by an additional job in `release.yml`. Until that is set up, install via `install.sh` or by downloading the binary directly from the Releases page.
+The Homebrew tap is the shared repo `CoreyRDean/homebrew-tap`. The `brew` job in `release.yml` runs after each successful **stable** release and:
 
-## Self-update (planned)
+1. Downloads the per-arch `intent-<os>-<arch>.tar.gz` artifacts and `SHA256SUMS` from the just-published release.
+2. Renders `Formula/intent.rb` with the version, per-arch URLs, and per-arch SHA256s baked in.
+3. Clones `CoreyRDean/homebrew-tap`, drops the formula at `Formula/intent.rb`, commits as `intent-release-bot`, and pushes.
 
-`i update now` will, once Phase 5 self-update lands:
+Nightly and pre-release tags are skipped — the brew channel is stable-only.
 
-1. Resolve the latest version on the configured channel.
-2. Download the appropriate `tar.gz` and `SHA256SUMS` to the cache directory.
-3. Verify the checksum.
-4. Atomically rename the new binary into place over the running one (POSIX-safe; the running process keeps its open file handle).
-5. Print the new version and exit successfully.
+### One-time setup
 
-In v1, `i update now` reports the available version and tells the user to use Homebrew or the install script.
+The `brew` job needs a PAT with `contents:write` on `CoreyRDean/homebrew-tap`, exposed to the `intent` repo as the secret `HOMEBREW_TAP_TOKEN`. Without that secret, the job no-ops with a message in the log instead of failing the release.
+
+To rotate or set:
+
+```bash
+gh secret set HOMEBREW_TAP_TOKEN \
+  --repo CoreyRDean/intent \
+  --body "$(pbpaste)"  # paste the PAT
+```
+
+### Users install via
+
+```bash
+brew install CoreyRDean/tap/intent
+```
+
+The formula's `post_install` writes the install marker as `brew`, so `i update now` dispatches to `brew upgrade intent`.
+
+## Self-update
+
+`i update now` consults the install marker (written by `install.sh`, by the brew formula's `post_install`, or by the binary's path heuristic if no marker exists) and dispatches:
+
+| Install method | What `i update now` runs |
+|---|---|
+| Homebrew  | `brew update && brew upgrade intent` |
+| install.sh | re-runs `install.sh` from `main` on the configured channel |
+| `go install` | `go install github.com/CoreyRDean/intent/cmd/intent@latest` |
+| manual / unknown | refuses; prints how to install via brew or `install.sh` |
+| distro package | refuses; tells you to use your package manager |
+
+The intent (sorry) is that we never silently overwrite a binary the user didn't choose to put under our control.

@@ -54,13 +54,14 @@ func (s Style) Cyan(t string) string   { return s.c("36", t) }
 // Spinner is a single-line, stderr-only progress indicator.
 // All methods are safe to call on a nil spinner (no-op).
 type Spinner struct {
-	style   Style
-	frames  []string
-	stop    chan struct{}
-	done    chan struct{}
-	mu      sync.Mutex
-	label   atomic.Pointer[string]
-	started atomic.Bool
+	style    Style
+	frames   []string
+	stop     chan struct{}
+	done     chan struct{}
+	stopOnce sync.Once
+	mu       sync.Mutex
+	label    atomic.Pointer[string]
+	started  atomic.Bool
 }
 
 // NewSpinner returns a spinner that renders to stderr if and only if stderr
@@ -100,14 +101,18 @@ func (s *Spinner) SetLabel(label string) {
 	s.label.Store(&l)
 }
 
-// Stop halts the spinner and clears its line.
+// Stop halts the spinner and clears its line. Idempotent — safe to
+// call from both an explicit cleanup site and a `defer` on the same
+// path, which is the natural pattern when a function might exit early.
 func (s *Spinner) Stop() {
 	if s == nil || !s.started.Load() {
 		return
 	}
-	close(s.stop)
-	<-s.done
-	fmt.Fprint(s.style.Stderr, "\r\x1b[K")
+	s.stopOnce.Do(func() {
+		close(s.stop)
+		<-s.done
+		fmt.Fprint(s.style.Stderr, "\r\x1b[K")
+	})
 }
 
 func (s *Spinner) loop() {

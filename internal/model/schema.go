@@ -1,68 +1,110 @@
 package model
 
 // SchemaJSON is the JSON Schema the model is constrained to.
-// Local backends pass this as a GBNF grammar derived by the server;
-// cloud backends pass it as response_format.json_schema.
+//
+// We use `oneOf` so that each `approach` value enforces the fields it
+// actually needs at sampling time. llama.cpp's grammar generator turns
+// this into a GBNF grammar that physically prevents the model from
+// emitting an `approach: "command"` object that lacks the `command`
+// string. This matters at the small-model end of the spectrum, where
+// Qwen2.5-Coder-1.5B will happily emit a half-formed proposal otherwise.
+//
+// We deliberately keep the per-branch property sets identical except for
+// the discriminator and required fields. Cloud backends that don't
+// support `oneOf` in their JSON-schema response_format flatten this in
+// the backend's fixup pass.
 const SchemaJSON = `{
   "type": "object",
-  "additionalProperties": false,
-  "required": ["intent_summary", "approach"],
-  "properties": {
-    "intent_summary": { "type": "string", "minLength": 1 },
-    "approach": {
-      "type": "string",
-      "enum": ["command", "script", "tool_call", "clarify", "refuse", "inform"]
-    },
-    "command": { "type": "string" },
-    "script": {
+  "oneOf": [
+    {
       "type": "object",
       "additionalProperties": false,
-      "required": ["interpreter", "body"],
+      "required": ["approach", "command", "description", "risk"],
       "properties": {
-        "interpreter": { "type": "string" },
-        "body":        { "type": "string" }
+        "approach":         { "const": "command" },
+        "command":          { "type": "string", "minLength": 1 },
+        "description":      { "type": "string", "minLength": 1 },
+        "risk":             { "enum": ["safe","network","mutates","destructive","sudo"] },
+        "needs_sudo":       { "type": "boolean" },
+        "expected_runtime": { "enum": ["instant","seconds","minutes","long"] },
+        "confidence":       { "enum": ["low","medium","high"] }
       }
     },
-    "tool_call": {
+    {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "arguments"],
+      "required": ["approach", "script", "description", "risk"],
       "properties": {
-        "name": {
-          "type": "string",
-          "enum": ["list_dir","read_file","head_file","which","stat","env_get","cwd","os_info","git_status"]
+        "approach":         { "const": "script" },
+        "script": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["interpreter", "body"],
+          "properties": {
+            "interpreter": { "type": "string", "minLength": 1 },
+            "body":        { "type": "string", "minLength": 1 }
+          }
         },
-        "arguments": { "type": "object" }
+        "description":      { "type": "string", "minLength": 1 },
+        "risk":             { "enum": ["safe","network","mutates","destructive","sudo"] },
+        "needs_sudo":       { "type": "boolean" },
+        "expected_runtime": { "enum": ["instant","seconds","minutes","long"] },
+        "confidence":       { "enum": ["low","medium","high"] }
       }
     },
-    "clarifying_question": { "type": "string" },
-    "refusal_reason": { "type": "string" },
-    "stdout_to_user": { "type": "string" },
-    "description": { "type": "string" },
-    "risk": {
-      "type": "string",
-      "enum": ["safe","network","mutates","destructive","sudo"]
-    },
-    "needs_sudo": { "type": "boolean" },
-    "expected_runtime": {
-      "type": "string",
-      "enum": ["instant","seconds","minutes","long"]
-    },
-    "alternatives": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["command", "description", "risk"],
-        "properties": {
-          "command":     { "type": "string" },
-          "description": { "type": "string" },
-          "risk":        { "type": "string" }
-        }
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approach", "tool_call", "description"],
+      "properties": {
+        "approach":    { "const": "tool_call" },
+        "tool_call": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "arguments"],
+          "properties": {
+            "name": {
+              "enum": ["list_dir","read_file","head_file","which","stat","env_get","cwd","os_info","git_status"]
+            },
+            "arguments": { "type": "object" }
+          }
+        },
+        "description": { "type": "string", "minLength": 1 },
+        "risk":        { "enum": ["safe","network","mutates","destructive","sudo"] }
       }
     },
-    "confidence": {
-      "type": "string",
-      "enum": ["low","medium","high"]
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approach", "stdout_to_user"],
+      "properties": {
+        "approach":       { "const": "inform" },
+        "stdout_to_user": { "type": "string", "minLength": 1 },
+        "description":    { "type": "string" },
+        "risk":           { "enum": ["safe","network","mutates","destructive","sudo"] }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approach", "clarifying_question"],
+      "properties": {
+        "approach":            { "const": "clarify" },
+        "clarifying_question": { "type": "string", "minLength": 1 },
+        "description":         { "type": "string" },
+        "risk":                { "enum": ["safe","network","mutates","destructive","sudo"] }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approach", "refusal_reason"],
+      "properties": {
+        "approach":       { "const": "refuse" },
+        "refusal_reason": { "type": "string", "minLength": 1 },
+        "description":    { "type": "string" },
+        "risk":           { "enum": ["safe","network","mutates","destructive","sudo"] }
+      }
     }
-  }
+  ]
 }`

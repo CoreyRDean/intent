@@ -60,3 +60,6 @@ Desktop.ini
 
 # Cursor agent state (local-only, do not publish)
 .cursor/hooks/state/
+
+# Claude Code worktrees (local-only scratch space)
+.claude/worktrees/

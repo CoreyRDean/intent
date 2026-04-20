@@ -17,7 +17,17 @@ func minimalConfig() *config.Config {
 	return &config.Config{Raw: map[string]string{}}
 }
 
+// clearBackendEnv makes each test hermetic w.r.t. INTENT_FORCE_BACKEND,
+// which is honored by buildBackend as a runtime override. Developers who
+// export it in their shell for manual debugging should still get green
+// tests. t.Setenv auto-restores on test end.
+func clearBackendEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("INTENT_FORCE_BACKEND", "")
+}
+
 func TestBuildBackend_MockIsNotFallback(t *testing.T) {
+	clearBackendEnv(t)
 	be, isFallback, err := buildBackend("mock", minimalConfig(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -31,6 +41,7 @@ func TestBuildBackend_MockIsNotFallback(t *testing.T) {
 }
 
 func TestBuildBackend_LlamafileLocalFallsBackWhenUnreachable(t *testing.T) {
+	clearBackendEnv(t)
 	// Point the daemon at a port that is definitely not listening.
 	cfg := minimalConfig()
 	cfg.Raw["daemon.host"] = "127.0.0.1"
@@ -49,6 +60,7 @@ func TestBuildBackend_LlamafileLocalFallsBackWhenUnreachable(t *testing.T) {
 }
 
 func TestBuildBackend_UnknownBackendErrors(t *testing.T) {
+	clearBackendEnv(t)
 	_, _, err := buildBackend("nonexistent", minimalConfig(), "")
 	if err == nil {
 		t.Fatal("expected error for unknown backend, got nil")

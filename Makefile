@@ -58,6 +58,26 @@ install: build
 uninstall:
 	rm -f $(BIN_PREFIX)/intent $(BIN_PREFIX)/i
 
+# `make link` — for local dev, symlinks ~/.local/bin/{intent,i} to the
+# binaries we just built. Since ~/.local/bin is on PATH but lives under
+# $HOME, this works without sudo and the symlinks always point at your
+# latest `make build` so iterating doesn't require a copy step.
+LINK_DIR ?= $(HOME)/.local/bin
+
+.PHONY: link
+link: build
+	@mkdir -p $(LINK_DIR)
+	@ln -sfn $(abspath $(BIN_DIR)/intent) $(LINK_DIR)/intent
+	@ln -sfn $(abspath $(BIN_DIR)/i)      $(LINK_DIR)/i
+	@echo "linked: $(LINK_DIR)/intent  -> $(abspath $(BIN_DIR)/intent)"
+	@echo "linked: $(LINK_DIR)/i       -> $(abspath $(BIN_DIR)/i)"
+	@$(LINK_DIR)/intent init record-install --method manual --channel dev >/dev/null 2>&1 || true
+
+.PHONY: unlink
+unlink:
+	@rm -f $(LINK_DIR)/intent $(LINK_DIR)/i
+	@echo "removed: $(LINK_DIR)/{intent,i}"
+
 .PHONY: clean
 clean:
 	rm -rf $(BIN_DIR) $(DIST_DIR)

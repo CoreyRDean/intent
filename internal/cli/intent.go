@@ -170,6 +170,24 @@ func cmdIntent(ctx context.Context, args []string) int {
 		return 3
 	}
 
+	// Self-heal: if the backend is local-llamafile and the daemon
+	// isn't reachable, offer to download the model and start it.
+	// This collapses what used to be three commands the user had to
+	// guess (`i model pull`, `i daemon install`, retry) into one
+	// prompt or, if `--yes` is set, zero. See ensure.go.
+	backendForCheck := cfg.Backend
+	if fl.backend != "" {
+		backendForCheck = fl.backend
+	}
+	if v := os.Getenv("INTENT_FORCE_BACKEND"); v != "" {
+		backendForCheck = v
+	}
+	cfgForCheck := *cfg
+	cfgForCheck.Backend = backendForCheck
+	if !ensureBackendReady(ctx, dirs, &cfgForCheck) {
+		return 3
+	}
+
 	// Build the prompt: include stdin as context unless --raw says otherwise.
 	finalPrompt := fl.prompt
 	if stdinData != "" {

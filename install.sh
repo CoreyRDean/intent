@@ -123,12 +123,35 @@ else
   sudo ln -sf intent "$LINK"
 fi
 
+# Record the install method so `i update now` knows to re-run this
+# script (rather than e.g. `brew upgrade`). Best-effort; failure here
+# is non-fatal.
+"$DEST" init record-install --method script --channel "$CHANNEL" 2>/dev/null || true
+
 echo
 echo "installed:"
 echo "  $DEST"
 echo "  $LINK"
 echo
-echo "next:"
-echo "  i init             # first-run setup"
-echo "  i model pull       # download the local model (~4.7 GB)"
-echo "  i hello            # try it"
+
+# Auto-run `intent init` if we have a real TTY on stdin/stderr. Without
+# this, users who curl|bash and ignore the next-steps text get a binary
+# they can't actually use until they read the docs. With it, the model
+# downloads and the daemon starts as part of the install flow.
+#
+# We skip it under `bash -c` / `curl | bash` (no TTY) so non-interactive
+# CI jobs aren't surprised by a 4 GB download.
+if [[ -t 0 && -t 2 ]]; then
+  echo "running first-run setup..."
+  echo
+  "$DEST" init || {
+    echo
+    echo "intent init exited non-zero. You can re-run it later:"
+    echo "  i init"
+  }
+else
+  echo "next:"
+  echo "  i init             # interactive first-run setup (~1 minute)"
+  echo "  # or non-interactively:"
+  echo "  i init --yes && i hello"
+fi

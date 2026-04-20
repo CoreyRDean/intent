@@ -26,6 +26,9 @@ func cmdExplain(ctx context.Context, args []string) int {
 		return 3
 	}
 	cfg, _ := config.Load(dirs.ConfigPath())
+	if !ensureBackendReady(ctx, dirs, cfg) {
+		return 3
+	}
 	be, isFallback, err := buildBackend(cfg.Backend, cfg, "")
 	if err != nil {
 		errf("explain: %v", err)

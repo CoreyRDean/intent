@@ -17,20 +17,21 @@ import (
 // knownSubcommands is the frozen set of top-level subcommands.
 // Anything else is treated as natural language.
 var knownSubcommands = map[string]commandHandler{
-	"init":    cmdInit,
-	"doctor":  cmdDoctor,
-	"config":  cmdConfig,
-	"model":   cmdModel,
-	"daemon":  cmdDaemon,
-	"history": cmdHistory,
-	"pin":     cmdPin,
-	"run":     cmdRun,
-	"explain": cmdExplain,
-	"fix":     cmdFix,
-	"report":  cmdReport,
-	"update":  cmdUpdate,
-	"version": cmdVersion,
-	"help":    cmdHelp,
+	"init":       cmdInit,
+	"shell-init": cmdShellInit,
+	"doctor":     cmdDoctor,
+	"config":     cmdConfig,
+	"model":      cmdModel,
+	"daemon":     cmdDaemon,
+	"history":    cmdHistory,
+	"pin":        cmdPin,
+	"run":        cmdRun,
+	"explain":    cmdExplain,
+	"fix":        cmdFix,
+	"report":     cmdReport,
+	"update":     cmdUpdate,
+	"version":    cmdVersion,
+	"help":       cmdHelp,
 }
 
 type commandHandler func(ctx context.Context, args []string) int
@@ -102,6 +103,7 @@ Common:
 
 Subcommands:
   init        First-run setup (model, daemon, completions).
+  shell-init  Print shell snippet to source for natural-language quoting.
   doctor      Diagnose installation, model, daemon, sandbox.
   config      Get/set/edit configuration.
   model       Manage local models.
