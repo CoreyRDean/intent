@@ -7,7 +7,7 @@ import (
 
 // PromptTemplateVersion is bumped on every prompt change. Skill cache keys
 // include this; bumping it invalidates the entire cache.
-const PromptTemplateVersion = "4"
+const PromptTemplateVersion = "5"
 
 // SystemPromptInputs is everything intent injects into the system prompt
 // at request time. Stable across daemon lifetime.
@@ -18,7 +18,8 @@ type SystemPromptInputs struct {
 	Distro            string // optional
 	Shell             string // basename of $SHELL
 	Cwd               string
-	AvailableBins     []string // names that exist in $PATH from the curated set
+	AvailableBins     []string // executable names from the user's $PATH, capped for prompt budget
+	TotalBinsOnPATH   int      // full count before truncation, 0 if unknown
 	GitBranch         string   // empty if not a repo
 	GitDirty          bool
 	ProjectDirectives string   // contents of .intentrc, if any
@@ -97,7 +98,18 @@ Other rules:
 		fmt.Fprintf(&b, "  cwd: %s\n", in.Cwd)
 	}
 	if len(in.AvailableBins) > 0 {
-		fmt.Fprintf(&b, "  available binaries: %s\n", strings.Join(in.AvailableBins, ", "))
+		header := "available binaries"
+		if in.TotalBinsOnPATH > len(in.AvailableBins) {
+			// Tell the model the list is a prompt-budget subset of the
+			// user's real $PATH, sorted with common tools first, and
+			// that it should use a which() tool_call if it needs to
+			// verify something not shown.
+			header = fmt.Sprintf(
+				"available binaries (showing %d of %d on $PATH; use tool_call to check others)",
+				len(in.AvailableBins), in.TotalBinsOnPATH,
+			)
+		}
+		fmt.Fprintf(&b, "  %s: %s\n", header, strings.Join(in.AvailableBins, ", "))
 	}
 	if in.GitBranch != "" {
 		dirty := ""
