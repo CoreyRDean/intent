@@ -17,6 +17,7 @@ import (
 	"github.com/CoreyRDean/intent/internal/model"
 	"github.com/CoreyRDean/intent/internal/safety"
 	"github.com/CoreyRDean/intent/internal/tools"
+	"github.com/CoreyRDean/intent/internal/verbose"
 )
 
 // Options control one turn.
@@ -59,6 +60,7 @@ func (e *Engine) Run(ctx context.Context, prompt string, opts Options) (*Result,
 
 	pack := contextpack.Gather(ctx)
 	res := &Result{ContextPack: pack}
+	vl := verbose.FromContext(ctx)
 
 	// Cache key.
 	key := cache.Key(cache.KeyInputs{
@@ -70,6 +72,11 @@ func (e *Engine) Run(ctx context.Context, prompt string, opts Options) (*Result,
 		PromptTemplateVersion: model.PromptTemplateVersion,
 	})
 	res.CacheKey = key
+	vl.Section("engine")
+	vl.KV("cache_key", key)
+	vl.KV("cache_enabled", opts.UseCache && e.cache != nil)
+	vl.KV("max_tool_steps", opts.MaxToolSteps)
+	vl.JSON("context_pack", pack)
 
 	if e.cache != nil && opts.UseCache {
 		if entry := e.cache.Get(key); entry != nil && entry.Response != nil {
@@ -78,11 +85,15 @@ func (e *Engine) Run(ctx context.Context, prompt string, opts Options) (*Result,
 			cp := *entry.Response
 			gr := safety.Apply(&cp)
 			if !gr.HardReject {
+				vl.KV("cache", "hit")
 				res.Response = &cp
 				res.GuardResult = gr
 				res.CacheHit = true
 				return res, nil
 			}
+			vl.KV("cache", "hit_but_rejected_by_guard")
+		} else {
+			vl.KV("cache", "miss")
 		}
 	}
 
@@ -144,11 +155,16 @@ func (e *Engine) Run(ctx context.Context, prompt string, opts Options) (*Result,
 		if opts.OnToolCall != nil {
 			opts.OnToolCall(resp.ToolCall.Name, resp.ToolCall.Arguments)
 		}
+		vl.Section(fmt.Sprintf("tool call (step %d)", step+1))
+		vl.KV("name", resp.ToolCall.Name)
+		vl.RawBytes("arguments", resp.ToolCall.Arguments)
 		out, err := tools.Run(ctx, resp.ToolCall.Name, resp.ToolCall.Arguments)
 		if err != nil {
 			out = tools.Result{"error": err.Error()}
+			vl.KV("tool_error", err)
 		}
 		toolResultJSON, _ := json.Marshal(out)
+		vl.RawBytes("tool_result", toolResultJSON)
 		msgs = append(msgs, model.Message{
 			Role:    "assistant",
 			Content: jsonMust(resp),
