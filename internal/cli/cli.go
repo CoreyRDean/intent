@@ -37,22 +37,25 @@ type commandHandler func(ctx context.Context, args []string) int
 
 // Run is the program entrypoint. Returns the exit code.
 func Run(ctx context.Context, args []string) int {
+	// Dispatch top-level flags before stripping so that --version and
+	// --help are not consumed by stripGlobalFlags before they can be matched.
+	if len(args) > 0 {
+		switch args[0] {
+		case "--version", "-V":
+			return cmdVersion(ctx, nil)
+		case "--help", "-h":
+			return cmdHelp(ctx, nil)
+		case "--uninstall":
+			return cmdUninstall(ctx, args[1:])
+		case "--update":
+			return cmdUpdate(ctx, args[1:])
+		}
+	}
+
 	args = stripGlobalFlags(args)
 	if len(args) == 0 {
 		// `i` with no args: show help.
 		return cmdHelp(ctx, nil)
-	}
-
-	// Top-level flags that masquerade as subcommands.
-	switch args[0] {
-	case "--version", "-V":
-		return cmdVersion(ctx, nil)
-	case "--help", "-h":
-		return cmdHelp(ctx, nil)
-	case "--uninstall":
-		return cmdUninstall(ctx, args[1:])
-	case "--update":
-		return cmdUpdate(ctx, args[1:])
 	}
 
 	if h, ok := knownSubcommands[args[0]]; ok {

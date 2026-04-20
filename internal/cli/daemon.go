@@ -11,9 +11,11 @@ import (
 	"github.com/CoreyRDean/intent/internal/state"
 )
 
+const daemonUsage = "usage: i daemon (start | stop | status | logs | install | uninstall)"
+
 func cmdDaemon(ctx context.Context, args []string) int {
 	if len(args) == 0 {
-		errf("usage: i daemon (start | stop | status | logs | install | uninstall)")
+		errf(daemonUsage)
 		return 1
 	}
 	dirs, err := state.Resolve()
@@ -22,6 +24,9 @@ func cmdDaemon(ctx context.Context, args []string) int {
 		return 3
 	}
 	switch args[0] {
+	case "--help", "-h", "help":
+		fmt.Println(daemonUsage)
+		return 0
 	case "start":
 		// Foreground for now; LaunchAgent/systemd integration lands in Phase 4.
 		s := &daemon.Server{Socket: dirs.SocketPath()}

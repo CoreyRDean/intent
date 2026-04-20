@@ -10,9 +10,11 @@ import (
 	"github.com/CoreyRDean/intent/internal/state"
 )
 
+const configUsage = "usage: i config (get <key> | set <key> <value> | edit | path)"
+
 func cmdConfig(_ context.Context, args []string) int {
 	if len(args) == 0 {
-		errf("usage: i config (get <key> | set <key> <value> | edit | path)")
+		errf(configUsage)
 		return 1
 	}
 	dirs, err := state.Resolve()
@@ -21,6 +23,9 @@ func cmdConfig(_ context.Context, args []string) int {
 		return 3
 	}
 	switch args[0] {
+	case "--help", "-h", "help":
+		fmt.Println(configUsage)
+		return 0
 	case "path":
 		fmt.Println(dirs.ConfigPath())
 		return 0

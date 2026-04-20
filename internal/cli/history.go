@@ -11,6 +11,8 @@ import (
 	"github.com/CoreyRDean/intent/internal/state"
 )
 
+const historyUsage = "usage: i history (list | show <id> | clear)"
+
 func cmdHistory(_ context.Context, args []string) int {
 	dirs, err := state.Resolve()
 	if err != nil {
@@ -22,6 +24,9 @@ func cmdHistory(_ context.Context, args []string) int {
 		sub = args[0]
 	}
 	switch sub {
+	case "--help", "-h", "help":
+		fmt.Println(historyUsage)
+		return 0
 	case "list":
 		return historyList(dirs.AuditPath())
 	case "show":
