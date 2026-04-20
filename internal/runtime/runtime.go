@@ -32,6 +32,15 @@ var DefaultModel = ModelInfo{
 	SizeMB: 4700,
 }
 
+// ModelFileForName returns the GGUF filename for the given model name.
+// For known models it returns the canonical filename; for others it appends ".gguf".
+func ModelFileForName(name string) string {
+	if name == DefaultModel.Name {
+		return DefaultModel.File
+	}
+	return name + ".gguf"
+}
+
 // Manager owns runtime/model artifacts on disk.
 type Manager struct {
 	CacheDir string
