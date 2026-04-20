@@ -36,8 +36,14 @@ type Config struct {
 // Defaults returns the project's chosen defaults.
 func Defaults() *Config {
 	return &Config{
-		Backend:               "llamafile-local",
-		Model:                 "qwen2.5-coder-7b-instruct-q4_k_m",
+		Backend: "llamafile-local",
+		// Catalog short-id. See internal/models.DefaultID. Defaults to
+		// the 3B model as the balanced "just works" option: strong
+		// enough that `i report` doesn't routinely hit the fallback
+		// parser, small enough to run on any laptop. Users can switch
+		// with `i model use <id>`; legacy configs storing full GGUF
+		// stems still resolve via Catalog.Get's backward-compat path.
+		Model:                 "qwen2.5-coder-3b",
 		AutoRun:               false,
 		Sandbox:               false,
 		MaxToolSteps:          5,

@@ -12,12 +12,16 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/CoreyRDean/intent/internal/models"
 )
 
 // LlamafileVersion is the runtime version we ship against.
 const LlamafileVersion = "0.10.0"
 
-// DefaultModel describes the model we install by default.
+// ModelInfo is the minimal shape the runtime package needs to
+// download a model. It's a projection of models.Model kept here for
+// backward compatibility; new code should pass models.Model around.
 type ModelInfo struct {
 	Name   string
 	Repo   string // huggingface repo
@@ -25,18 +29,46 @@ type ModelInfo struct {
 	SizeMB int    // approximate, for progress UX
 }
 
-var DefaultModel = ModelInfo{
-	Name:   "qwen2.5-coder-7b-instruct-q4_k_m",
-	Repo:   "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
-	File:   "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
-	SizeMB: 4700,
+// FromCatalog projects a catalog entry into a ModelInfo for the
+// runtime package. Caller must ensure m is non-nil.
+func FromCatalog(m *models.Model) ModelInfo {
+	return ModelInfo{
+		Name:   m.ID,
+		Repo:   m.Repo,
+		File:   models.ModelFilename(m),
+		SizeMB: m.SizeMB,
+	}
 }
 
-// ModelFileForName returns the GGUF filename for the given model name.
-// For known models it returns the canonical filename; for others it appends ".gguf".
+// DefaultModel is the seeded "install this first" model. Source of
+// truth is the models catalog; this variable stays for callers that
+// already reference runtime.DefaultModel.
+var DefaultModel = defaultModelInfo()
+
+func defaultModelInfo() ModelInfo {
+	cat := models.New(nil)
+	m := cat.Default()
+	if m == nil {
+		return ModelInfo{}
+	}
+	return FromCatalog(m)
+}
+
+// ModelFileForName returns the GGUF filename for the given model
+// config tag. Looks up the catalog (built-ins only, no disk I/O)
+// and falls back to appending .gguf for unknown tags. For custom
+// user models the caller should consult the Catalog directly since
+// it has access to the full persisted entry.
 func ModelFileForName(name string) string {
-	if name == DefaultModel.Name {
+	if name == "" {
 		return DefaultModel.File
+	}
+	cat := models.New(nil)
+	if m := cat.Get(name); m != nil {
+		return models.ModelFilename(m)
+	}
+	if filepath.Ext(name) == ".gguf" {
+		return name
 	}
 	return name + ".gguf"
 }
