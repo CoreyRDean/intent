@@ -46,7 +46,7 @@ func Defaults() *Config {
 		Model:                 "qwen2.5-coder-3b",
 		AutoRun:               false,
 		Sandbox:               false,
-		MaxToolSteps:          5,
+		MaxToolSteps:          12,
 		Timeout:               60 * time.Second,
 		UpdateChannel:         "stable",
 		AutoUpdate:            false,

@@ -30,6 +30,11 @@ type Options struct {
 	ProjectRC    string
 	OnPhase      func(phase string)             // for spinner labels
 	OnToolCall   func(name string, args []byte) // for visibility
+	// ToolHost provides the user-IO side of the tool catalog (e.g.
+	// ask_user). May be nil for non-interactive callers; tools that
+	// need a host will report an error result so the model can route
+	// around them.
+	ToolHost tools.Host
 }
 
 // Result is what the engine returns.
@@ -55,7 +60,12 @@ func (e *Engine) Run(ctx context.Context, prompt string, opts Options) (*Result,
 		return nil, fmt.Errorf("engine: nil backend")
 	}
 	if opts.MaxToolSteps <= 0 {
-		opts.MaxToolSteps = 5
+		// Bumped from 5 to 12: the tool catalog now includes help,
+		// grep, find_files and web_fetch, which are commonly chained
+		// ("look up command → list dir → read file → compose").
+		// Small models still hit `approach: command` on step 1 for
+		// trivial prompts, so raising the ceiling is cheap.
+		opts.MaxToolSteps = 12
 	}
 
 	pack := contextpack.Gather(ctx)
@@ -158,7 +168,7 @@ func (e *Engine) Run(ctx context.Context, prompt string, opts Options) (*Result,
 		vl.Section(fmt.Sprintf("tool call (step %d)", step+1))
 		vl.KV("name", resp.ToolCall.Name)
 		vl.RawBytes("arguments", resp.ToolCall.Arguments)
-		out, err := tools.Run(ctx, resp.ToolCall.Name, resp.ToolCall.Arguments)
+		out, err := tools.Run(ctx, opts.ToolHost, resp.ToolCall.Name, resp.ToolCall.Arguments)
 		if err != nil {
 			out = tools.Result{"error": err.Error()}
 			vl.KV("tool_error", err)
