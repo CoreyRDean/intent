@@ -49,19 +49,41 @@ vet:
 .PHONY: check
 check: vet test
 
+# `make install` — system install into $(BIN_PREFIX) (default /usr/local/bin).
+# This is the path `launchd`/`systemd` can actually exec, because on recent
+# macOS versions binaries under ~/Documents are TCC-protected and hang dyld
+# when launched outside an interactive shell. We also record the install
+# method and, if a daemon service is already registered, reinstall it so
+# it picks up the new binary path without requiring the user to remember.
 .PHONY: install
 install: build
 	install -m 0755 $(BIN_DIR)/intent $(BIN_PREFIX)/intent
 	ln -sf intent $(BIN_PREFIX)/i
+	@$(BIN_PREFIX)/intent init record-install --method manual --channel $(CHANNEL) >/dev/null 2>&1 || true
+	@if $(BIN_PREFIX)/intent daemon status >/dev/null 2>&1 \
+	   || [ -f "$$HOME/Library/LaunchAgents/com.coreyrdean.intent.plist" ] \
+	   || [ -f "$$HOME/.config/systemd/user/com.coreyrdean.intent.service" ]; then \
+	  echo "reinstalling daemon service to pick up the new binary..." ; \
+	  $(BIN_PREFIX)/intent daemon uninstall >/dev/null 2>&1 || true ; \
+	  $(BIN_PREFIX)/intent daemon install ; \
+	fi
+	@echo "installed: $(BIN_PREFIX)/intent (and $(BIN_PREFIX)/i)"
 
 .PHONY: uninstall
 uninstall:
+	-$(BIN_PREFIX)/intent daemon uninstall 2>/dev/null
 	rm -f $(BIN_PREFIX)/intent $(BIN_PREFIX)/i
 
 # `make link` — for local dev, symlinks ~/.local/bin/{intent,i} to the
 # binaries we just built. Since ~/.local/bin is on PATH but lives under
 # $HOME, this works without sudo and the symlinks always point at your
 # latest `make build` so iterating doesn't require a copy step.
+#
+# Caveat (macOS): the launchd-managed `intentd` service cannot execute
+# a binary whose real path is under ~/Documents — that directory is
+# TCC-protected and launchd hangs in dyld before main() ever runs.
+# For a working daemon you need `make install` (which puts the binary
+# in /usr/local/bin) in addition to (or instead of) `make link`.
 LINK_DIR ?= $(HOME)/.local/bin
 
 .PHONY: link
