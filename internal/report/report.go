@@ -4,6 +4,7 @@
 package report
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,28 @@ import (
 	"sort"
 	"strings"
 )
+
+// runGH runs `gh` with captured stdout AND stderr so error messages
+// don't vanish. The default exec.Cmd.Output() only captures stdout,
+// which means a failed `gh issue create --label bogus` returns a bare
+// "exit status 1" — useless for diagnosing the real cause. We surface
+// stderr in the returned error so users can see what GitHub actually
+// complained about (missing label, auth, rate-limit, etc.).
+func runGH(ctx context.Context, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "gh", args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return nil, fmt.Errorf("gh %s: %s", strings.Join(args, " "), msg)
+	}
+	return stdout.Bytes(), nil
+}
 
 const Repo = "CoreyRDean/intent"
 
@@ -35,8 +58,8 @@ func Available(ctx context.Context) error {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return fmt.Errorf("gh CLI not installed; install from https://cli.github.com")
 	}
-	if err := exec.CommandContext(ctx, "gh", "auth", "status").Run(); err != nil {
-		return fmt.Errorf("gh not authenticated; run `gh auth login`")
+	if _, err := runGH(ctx, "auth", "status"); err != nil {
+		return fmt.Errorf("gh not authenticated; run `gh auth login` (%v)", err)
 	}
 	return nil
 }
@@ -46,21 +69,63 @@ func Search(ctx context.Context, query string, limit int) ([]SearchResult, error
 	if limit <= 0 {
 		limit = 5
 	}
-	args := []string{"search", "issues",
+	out, err := runGH(ctx, "search", "issues",
 		"--repo", Repo,
 		"--json", "number,title,url,state",
 		"--limit", fmt.Sprintf("%d", limit),
 		query,
-	}
-	out, err := exec.CommandContext(ctx, "gh", args...).Output()
+	)
 	if err != nil {
-		return nil, fmt.Errorf("gh search: %w", err)
+		return nil, err
 	}
 	var results []SearchResult
 	if err := json.Unmarshal(out, &results); err != nil {
 		return nil, err
 	}
 	return results, nil
+}
+
+// RepoLabels returns the set of label names configured on the repo.
+// Used to filter proposal labels so we don't fail the whole create
+// call because the model hallucinated a label that doesn't exist.
+func RepoLabels(ctx context.Context) (map[string]bool, error) {
+	out, err := runGH(ctx, "label", "list",
+		"--repo", Repo,
+		"--json", "name",
+		"--limit", "100",
+	)
+	if err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(out, &rows); err != nil {
+		return nil, err
+	}
+	set := make(map[string]bool, len(rows))
+	for _, r := range rows {
+		set[r.Name] = true
+	}
+	return set, nil
+}
+
+// FilterLabels returns the subset of proposed labels that actually
+// exist on the repo, and the dropped ones separately so the caller
+// can warn. A nil known map means "no filtering" (caller lacked
+// access to repo label list).
+func FilterLabels(proposed []string, known map[string]bool) (kept, dropped []string) {
+	if known == nil {
+		return proposed, nil
+	}
+	for _, l := range proposed {
+		if known[l] {
+			kept = append(kept, l)
+		} else {
+			dropped = append(dropped, l)
+		}
+	}
+	return kept, dropped
 }
 
 // Similarity returns a 0..1 token-set ratio. Used for dedupe.
@@ -168,7 +233,7 @@ func CreateIssue(ctx context.Context, p Proposal) (string, error) {
 	for _, l := range p.Labels {
 		args = append(args, "--label", l)
 	}
-	out, err := exec.CommandContext(ctx, "gh", args...).Output()
+	out, err := runGH(ctx, args...)
 	if err != nil {
 		return "", err
 	}
@@ -177,11 +242,10 @@ func CreateIssue(ctx context.Context, p Proposal) (string, error) {
 
 // CommentOnIssue adds a comment to an existing issue.
 func CommentOnIssue(ctx context.Context, number int, body string) (string, error) {
-	args := []string{"issue", "comment", fmt.Sprintf("%d", number),
+	out, err := runGH(ctx, "issue", "comment", fmt.Sprintf("%d", number),
 		"--repo", Repo,
 		"--body", body,
-	}
-	out, err := exec.CommandContext(ctx, "gh", args...).Output()
+	)
 	if err != nil {
 		return "", err
 	}
