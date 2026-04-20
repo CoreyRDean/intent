@@ -196,3 +196,32 @@ type StreamingBackend interface {
 	Backend
 	Stream(ctx context.Context, req CompleteRequest) (<-chan StreamEvent, error)
 }
+
+// StructuredRequest is a bare chat request for producing arbitrary
+// JSON conforming to a caller-supplied schema, bypassing the standard
+// Response envelope. Used by tools like `i report` that need a
+// task-specific structured output rather than an approach/risk/command
+// proposal.
+type StructuredRequest struct {
+	Messages    []Message
+	SchemaJSON  []byte // REQUIRED. The schema the backend must enforce.
+	Temperature float64
+	MaxTokens   int
+	Seed        *int64
+}
+
+// StructuredBackend is an optional capability for backends that can
+// enforce an arbitrary JSON schema on output (llama.cpp / llamafile
+// via response_format.schema, OpenAI via response_format.json_schema).
+// Returns the raw JSON bytes the model produced, already schema-valid.
+// Backends that don't support this return ErrStructuredUnsupported so
+// callers can fall back cleanly.
+type StructuredBackend interface {
+	Backend
+	CompleteStructured(ctx context.Context, req StructuredRequest) ([]byte, error)
+}
+
+// ErrStructuredUnsupported is returned by a Backend.CompleteStructured
+// implementation to signal that the caller should use the envelope
+// path plus best-effort parsing instead.
+var ErrStructuredUnsupported = fmt.Errorf("backend does not support structured output")

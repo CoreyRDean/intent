@@ -79,53 +79,14 @@ type chatResp struct {
 	} `json:"error,omitempty"`
 }
 
-// Complete sends a chat request and parses the model's JSON response.
+// Complete sends a chat request constrained to the standard Response
+// envelope and parses the model's JSON response.
 func (b *Backend) Complete(ctx context.Context, in model.CompleteRequest) (*model.Response, error) {
-	reqBody := chatReq{
-		Model:       b.ModelTag,
-		Messages:    in.Messages,
-		Temperature: in.Temperature,
-		MaxTokens:   in.MaxTokens,
-		Seed:        in.Seed,
-		ResponseFormat: &responseFormat{
-			Type:   "json_object",
-			Schema: json.RawMessage(model.SchemaJSON),
-		},
-	}
-	body, err := json.Marshal(reqBody)
+	content, err := b.chatJSON(ctx, in.Messages, []byte(model.SchemaJSON), in.Temperature, in.MaxTokens, in.Seed)
 	if err != nil {
 		return nil, err
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		b.Endpoint+"/v1/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if b.APIKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+b.APIKey)
-	}
-	resp, err := b.Client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("call backend: %w", err)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("backend %s: %s", resp.Status, truncate(string(raw), 400))
-	}
-	var cr chatResp
-	if err := json.Unmarshal(raw, &cr); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-	if cr.Error != nil {
-		return nil, fmt.Errorf("backend error: %s", cr.Error.Message)
-	}
-	if len(cr.Choices) == 0 {
-		return nil, fmt.Errorf("backend returned no choices")
-	}
-	content := strings.TrimSpace(cr.Choices[0].Message.Content)
-	content = stripFences(content)
+	content = stripFences(strings.TrimSpace(content))
 	var out model.Response
 	if err := json.Unmarshal([]byte(content), &out); err != nil {
 		return nil, fmt.Errorf("model output not valid JSON: %w (got %q)", err, truncate(content, 200))
@@ -135,6 +96,76 @@ func (b *Backend) Complete(ctx context.Context, in model.CompleteRequest) (*mode
 		return nil, fmt.Errorf("model response failed schema: %w (got %q)", err, truncate(content, 400))
 	}
 	return &out, nil
+}
+
+// CompleteStructured implements model.StructuredBackend. The caller-
+// supplied schema is enforced by llamafile's response_format.schema
+// grammar, so the returned bytes are already schema-valid JSON.
+func (b *Backend) CompleteStructured(ctx context.Context, in model.StructuredRequest) ([]byte, error) {
+	if len(in.SchemaJSON) == 0 {
+		return nil, fmt.Errorf("CompleteStructured: SchemaJSON is required")
+	}
+	content, err := b.chatJSON(ctx, in.Messages, in.SchemaJSON, in.Temperature, in.MaxTokens, in.Seed)
+	if err != nil {
+		return nil, err
+	}
+	content = stripFences(strings.TrimSpace(content))
+	// Validate it parses as SOME JSON before returning so callers get a
+	// clear error before they try to unmarshal into their own type.
+	var any json.RawMessage
+	if err := json.Unmarshal([]byte(content), &any); err != nil {
+		return nil, fmt.Errorf("structured output not valid JSON: %w (got %q)", err, truncate(content, 200))
+	}
+	return []byte(content), nil
+}
+
+// chatJSON is the shared HTTP round-trip. Temperature/max_tokens/seed
+// are passed through verbatim so the caller controls determinism.
+func (b *Backend) chatJSON(ctx context.Context, messages []model.Message, schema []byte, temp float64, maxTok int, seed *int64) (string, error) {
+	reqBody := chatReq{
+		Model:       b.ModelTag,
+		Messages:    messages,
+		Temperature: temp,
+		MaxTokens:   maxTok,
+		Seed:        seed,
+		ResponseFormat: &responseFormat{
+			Type:   "json_object",
+			Schema: json.RawMessage(schema),
+		},
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		b.Endpoint+"/v1/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if b.APIKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+b.APIKey)
+	}
+	resp, err := b.Client.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("call backend: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("backend %s: %s", resp.Status, truncate(string(raw), 400))
+	}
+	var cr chatResp
+	if err := json.Unmarshal(raw, &cr); err != nil {
+		return "", fmt.Errorf("decode response: %w", err)
+	}
+	if cr.Error != nil {
+		return "", fmt.Errorf("backend error: %s", cr.Error.Message)
+	}
+	if len(cr.Choices) == 0 {
+		return "", fmt.Errorf("backend returned no choices")
+	}
+	return cr.Choices[0].Message.Content, nil
 }
 
 // backfillRequiredFields supplies sane defaults for fields small local
