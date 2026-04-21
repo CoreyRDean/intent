@@ -106,6 +106,12 @@ func TestHelpFlag(t *testing.T) {
 	if !strings.Contains(stdout, `i "ping google's dns"`) {
 		t.Fatalf("expected help to include quoted apostrophe example, got: %q", stdout)
 	}
+	if !strings.Contains(stdout, "--context K=V") {
+		t.Fatalf("expected help to include --context flag docs, got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "--from-intent") {
+		t.Fatalf("expected help to include --from-intent flag docs, got: %q", stdout)
+	}
 }
 
 func TestNoArgs(t *testing.T) {

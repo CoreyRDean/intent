@@ -93,6 +93,23 @@ Prompts without apostrophes are unaffected and need no quoting.
 
 ---
 
+## Invocation context flags
+
+Use `--context key=value` to inject ephemeral, per-call hints into the model prompt without changing global config.
+
+```sh
+i --context repo=core --context task=triage "summarize recent risky changes"
+i --context env=staging --dry "check whether the api is reachable"
+```
+
+When chaining intent into intent, `INTENT_PIPE_FROM=intent` is used to auto-enable inter-intent behavior (`--json` and `--from-intent` semantics). You can still pass `--from-intent` explicitly when testing or scripting that flow:
+
+```sh
+INTENT_PIPE_FROM=intent i --from-intent --json "if upstream output indicates failure, exit 1 else 0"
+```
+
+---
+
 ## Managing models
 
 intent ships with a curated catalog of small-to-medium GGUF models that run locally via [llamafile](https://github.com/mozilla-ai/llamafile). You can also point it at any public Hugging Face GGUF repo.

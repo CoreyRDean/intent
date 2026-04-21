@@ -25,21 +25,34 @@ import (
 
 // intentFlags is the parsed v1 flag set for natural-language mode.
 type intentFlags struct {
-	yes      bool
-	dry      bool
-	sandbox  bool
-	ro       bool
-	json     bool
-	raw      bool
-	quiet    bool
-	boolean  bool
-	explain  bool
-	noCache  bool
-	timeout  time.Duration
-	backend  string
-	modelTag string
-	n        int
-	prompt   string
+	yes        bool
+	dry        bool
+	sandbox    bool
+	ro         bool
+	fromIntent bool
+	json       bool
+	raw        bool
+	quiet      bool
+	boolean    bool
+	explain    bool
+	noCache    bool
+	timeout    time.Duration
+	backend    string
+	modelTag   string
+	context    stringListFlag
+	n          int
+	prompt     string
+}
+
+type stringListFlag []string
+
+func (s *stringListFlag) String() string {
+	return strings.Join(*s, ",")
+}
+
+func (s *stringListFlag) Set(v string) error {
+	*s = append(*s, strings.TrimSpace(v))
+	return nil
 }
 
 func parseIntentFlags(args []string) (*intentFlags, error) {
@@ -51,6 +64,7 @@ func parseIntentFlags(args []string) (*intentFlags, error) {
 	fs.BoolVar(&out.dry, "dry", false, "")
 	fs.BoolVar(&out.sandbox, "sandbox", false, "")
 	fs.BoolVar(&out.ro, "ro", false, "")
+	fs.BoolVar(&out.fromIntent, "from-intent", false, "")
 	fs.BoolVar(&out.json, "json", false, "")
 	fs.BoolVar(&out.raw, "raw", false, "")
 	fs.BoolVar(&out.quiet, "quiet", false, "")
@@ -62,17 +76,19 @@ func parseIntentFlags(args []string) (*intentFlags, error) {
 	fs.StringVar(&out.backend, "backend", "", "")
 	fs.StringVar(&out.modelTag, "model", "", "")
 	fs.IntVar(&out.n, "n", 1, "")
+	fs.Var(&out.context, "context", "")
 
 	// Allow flags interleaved with the natural-language prompt.
 	// We pre-extract recognized flags and treat the rest as the prompt.
 	known := map[string]bool{
 		"--yes": true, "-y": true,
-		"--dry":     true,
-		"--sandbox": true,
-		"--ro":      true,
-		"--json":    true,
-		"--raw":     true,
-		"--quiet":   true, "-q": true,
+		"--dry":         true,
+		"--sandbox":     true,
+		"--ro":          true,
+		"--from-intent": true,
+		"--json":        true,
+		"--raw":         true,
+		"--quiet":       true, "-q": true,
 		"--bool":     true,
 		"--explain":  true,
 		"--no-cache": true,
@@ -81,6 +97,7 @@ func parseIntentFlags(args []string) (*intentFlags, error) {
 		"--timeout": true,
 		"--backend": true,
 		"--model":   true,
+		"--context": true,
 		"-n":        true,
 	}
 	flagsToParse := []string{}
@@ -134,6 +151,7 @@ func parseIntentFlags(args []string) (*intentFlags, error) {
 		out.quiet = true
 	}
 	if !stdinTTY && os.Getenv("INTENT_PIPE_FROM") == "intent" {
+		out.fromIntent = true
 		out.json = true
 	}
 	// Piped stdin means there is no usable TTY to read a y/n from, so
@@ -266,6 +284,7 @@ func cmdIntent(ctx context.Context, args []string) int {
 		MaxToolSteps: cfg.MaxToolSteps,
 		UseCache:     !fl.noCache && cfg.CacheEnabled,
 		WriteCache:   !fl.noCache && cfg.CacheEnabled,
+		UserContext:  []string(fl.context),
 		ToolHost:     host,
 		OnPhase: func(p string) {
 			if sp != nil {

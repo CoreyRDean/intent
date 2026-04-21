@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/CoreyRDean/intent/internal/model"
@@ -10,6 +11,29 @@ import (
 type cacheIdentityBackend struct {
 	name          string
 	cacheIdentity string
+}
+
+type captureSystemPromptBackend struct {
+	systemPrompt string
+}
+
+func (b *captureSystemPromptBackend) Name() string { return "capture" }
+
+func (b *captureSystemPromptBackend) Available(context.Context) error { return nil }
+
+func (b *captureSystemPromptBackend) Complete(_ context.Context, req model.CompleteRequest) (*model.Response, error) {
+	if len(req.Messages) > 0 {
+		b.systemPrompt = req.Messages[0].Content
+	}
+	return &model.Response{
+		IntentSummary:   "List files in the current directory.",
+		Approach:        model.ApproachCommand,
+		Command:         "ls -la",
+		Description:     "List files in the current working directory.",
+		Risk:            model.RiskSafe,
+		ExpectedRuntime: model.RuntimeInstant,
+		Confidence:      model.ConfidenceHigh,
+	}, nil
 }
 
 func (b *cacheIdentityBackend) Name() string { return b.name }
@@ -53,5 +77,23 @@ func TestRunCacheKeyUsesBackendCacheIdentity(t *testing.T) {
 	}
 	if a.CacheKey == b.CacheKey {
 		t.Fatalf("cache key collision across distinct backend identities: %q", a.CacheKey)
+	}
+}
+
+func TestRunInjectsUserContextIntoSystemPrompt(t *testing.T) {
+	eng := New(nil)
+	be := &captureSystemPromptBackend{}
+	_, err := eng.Run(context.Background(), "list files", Options{
+		Backend:     be,
+		UserContext: []string{"repo=core", "ticket=123"},
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(be.systemPrompt, "User-supplied context:") {
+		t.Fatalf("system prompt missing user context section: %q", be.systemPrompt)
+	}
+	if !strings.Contains(be.systemPrompt, "repo=core") || !strings.Contains(be.systemPrompt, "ticket=123") {
+		t.Fatalf("system prompt missing context values: %q", be.systemPrompt)
 	}
 }
