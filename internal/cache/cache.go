@@ -26,6 +26,10 @@ type KeyInputs struct {
 	BinariesFingerprint   string
 	BackendIdentity       string
 	PromptTemplateVersion string
+	// UserContextFingerprint captures any --context values that are
+	// injected into the system prompt. Order is preserved because the
+	// model sees them in order; see UserContextFingerprint.
+	UserContextFingerprint string
 }
 
 // Key computes the deterministic cache key.
@@ -37,9 +41,22 @@ func Key(in KeyInputs) string {
 		in.BinariesFingerprint,
 		in.BackendIdentity,
 		in.PromptTemplateVersion,
+		in.UserContextFingerprint,
 	}
 	h := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
 	return hex.EncodeToString(h[:])
+}
+
+// UserContextFingerprint returns a stable fingerprint of the ordered
+// --context values forwarded into the system prompt. Order is preserved
+// because the model sees the entries in order, and two orderings may
+// produce materially different answers. An empty slice yields "".
+func UserContextFingerprint(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	h := sha256.Sum256([]byte(strings.Join(values, "\x1e")))
+	return hex.EncodeToString(h[:8])
 }
 
 func normalizePrompt(s string) string {

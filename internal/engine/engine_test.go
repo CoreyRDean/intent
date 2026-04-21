@@ -97,3 +97,57 @@ func TestRunInjectsUserContextIntoSystemPrompt(t *testing.T) {
 		t.Fatalf("system prompt missing context values: %q", be.systemPrompt)
 	}
 }
+
+func TestRunCacheKeyIncludesUserContext(t *testing.T) {
+	eng := New(nil)
+	ctx := context.Background()
+	backend := &cacheIdentityBackend{
+		name:          "llamafile",
+		cacheIdentity: "llamafile|http://127.0.0.1:8080|qwen2.5-coder-3b",
+	}
+
+	base, err := eng.Run(ctx, "list files", Options{Backend: backend})
+	if err != nil {
+		t.Fatalf("run base: %v", err)
+	}
+
+	withCtx, err := eng.Run(ctx, "list files", Options{
+		Backend:     backend,
+		UserContext: []string{"env=production"},
+	})
+	if err != nil {
+		t.Fatalf("run with context: %v", err)
+	}
+	if base.CacheKey == withCtx.CacheKey {
+		t.Fatalf("cache key collision when --context was added: %q", base.CacheKey)
+	}
+
+	other, err := eng.Run(ctx, "list files", Options{
+		Backend:     backend,
+		UserContext: []string{"env=staging"},
+	})
+	if err != nil {
+		t.Fatalf("run with other context: %v", err)
+	}
+	if withCtx.CacheKey == other.CacheKey {
+		t.Fatalf("cache key collision across distinct --context values: %q", withCtx.CacheKey)
+	}
+
+	reordered, err := eng.Run(ctx, "list files", Options{
+		Backend:     backend,
+		UserContext: []string{"env=staging", "env=production"},
+	})
+	if err != nil {
+		t.Fatalf("run reordered: %v", err)
+	}
+	forward, err := eng.Run(ctx, "list files", Options{
+		Backend:     backend,
+		UserContext: []string{"env=production", "env=staging"},
+	})
+	if err != nil {
+		t.Fatalf("run forward: %v", err)
+	}
+	if reordered.CacheKey == forward.CacheKey {
+		t.Fatalf("cache key ignored --context order: %q", forward.CacheKey)
+	}
+}
