@@ -19,7 +19,7 @@ const SchemaJSON = `{
     {
       "type": "object",
       "additionalProperties": false,
-      "required": ["approach", "command", "description", "risk"],
+      "required": ["approach", "command", "description", "risk", "expected_runtime", "confidence"],
       "properties": {
         "approach":         { "const": "command" },
         "command":          { "type": "string", "minLength": 1 },
@@ -33,7 +33,7 @@ const SchemaJSON = `{
     {
       "type": "object",
       "additionalProperties": false,
-      "required": ["approach", "script", "description", "risk"],
+      "required": ["approach", "script", "description", "risk", "expected_runtime", "confidence"],
       "properties": {
         "approach":         { "const": "script" },
         "script": {

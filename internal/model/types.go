@@ -127,6 +127,12 @@ func (r *Response) Validate() error {
 		if r.Risk == "" {
 			return fmt.Errorf("approach=command requires risk")
 		}
+		if r.ExpectedRuntime == "" {
+			return fmt.Errorf("approach=command requires expected_runtime")
+		}
+		if r.Confidence == "" {
+			return fmt.Errorf("approach=command requires confidence")
+		}
 	case ApproachScript:
 		if r.Script == nil || r.Script.Body == "" {
 			return fmt.Errorf("approach=script requires script.body")
@@ -136,6 +142,12 @@ func (r *Response) Validate() error {
 		}
 		if r.Risk == "" {
 			return fmt.Errorf("approach=script requires risk")
+		}
+		if r.ExpectedRuntime == "" {
+			return fmt.Errorf("approach=script requires expected_runtime")
+		}
+		if r.Confidence == "" {
+			return fmt.Errorf("approach=script requires confidence")
 		}
 	case ApproachToolCall:
 		if r.ToolCall == nil || r.ToolCall.Name == "" {
