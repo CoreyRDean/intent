@@ -294,10 +294,25 @@ func askProposalsStructured(ctx context.Context, be model.Backend, userInput str
 	// Short system prompt is fine here — the grammar is doing the heavy
 	// lifting. We don't need an example because the model literally
 	// cannot produce anything but the target shape.
-	sys := `You convert user feedback into GitHub issue proposals.
-- One proposal per distinct bug or feature in the input.
-- title: <=80 chars, imperative mood ("Add --literal flag").
-- body: concise markdown describing the problem or feature.
+	//
+	// The hard part the small model tends to get wrong: when the user
+	// pastes a failure transcript (their prior prompt + the CLI's bad
+	// output + a narrative about what should have happened), the model
+	// latches onto the embedded prompt as a fresh feature request and
+	// files issues to *implement* it. The correct read is that the
+	// embedded prompt + output are evidence of a CLI behavior bug, and
+	// the issue should be about `intent` / `i` itself. The scope
+	// paragraph below is load-bearing; do not trim it casually.
+	sys := `You convert user feedback about the intent CLI (invoked as 'i' or 'intent') into GitHub issue proposals for its own repository.
+
+SCOPE (critical): Every proposal describes what 'intent' / 'i' should do differently. Proposals NEVER describe the tasks the user was trying to accomplish WITH 'i'.
+If the feedback embeds a prior 'i' invocation — the prompt the user gave it, a preview of its output, or a script it produced — treat those as EVIDENCE of CLI behavior, not as features to implement. The issue is about how 'i' handled (or should have handled) that input.
+Phrases like "failure case", "failure report", "expected X, got Y", a quoted 'i ...' invocation, or an indented output preview are strong signals that the input is a meta-report. In that case produce ONE issue describing the CLI behavior bug, not one issue per topic mentioned inside the transcript.
+
+FORMAT:
+- One proposal per distinct CLI behavior bug or feature in the feedback.
+- title: <=80 chars, imperative mood, about the CLI ("Ground alias edits in actual ~/.zshrc contents").
+- body: concise markdown. For failure transcripts include: observed behavior, expected behavior, and the quoted user prompt + quoted CLI output as evidence.
 - labels: for bugs ["bug","needs-triage"]; for features ["enhancement","needs-triage"]; for docs ["documentation"].
 - kind: "bug" | "feature" | "doc".`
 	messages := []model.Message{
@@ -343,19 +358,22 @@ func askProposalsStructured(ctx context.Context, be model.Backend, userInput str
 // and let the caller fall through to the un-augmented structured call.
 // Evidence gathering is opportunistic, not load-bearing.
 func gatherReportEvidence(ctx context.Context, eng *engine.Engine, be model.Backend, userInput string, sp *tui.Spinner) string {
-	sys := `You are gathering evidence for a GitHub issue report against the current workspace.
+	sys := `You are gathering evidence for a GitHub issue report against the 'intent' CLI (invoked as 'i' or 'intent'). The workspace IS the 'intent' source repo.
 
-The user's feedback is below. You MUST investigate before answering — start with at least one tool call. Default first move: git_status() to confirm the repo, then find_files / grep to locate whatever the user is talking about. Then read_file / head_file the relevant region.
+The user's feedback is below. It is feedback ABOUT the CLI's behavior, not a request to implement something. If it embeds a prior 'i' invocation (the prompt the user gave, a preview of the output, a script 'i' generated), those are symptoms of the CLI's behavior — ground your evidence in the CLI's source, not in whatever task the embedded prompt was about.
+
+You MUST investigate before answering — start with at least one tool call. Default first move: git_status() to confirm the repo, then find_files / grep to locate the CLI code path responsible for the observed behavior. Then read_file / head_file the relevant region.
 
 Examples of what to gather:
-- If the user describes a bug in a specific subcommand, find the file that implements it (find_files / grep) and read the relevant region.
-- If the user mentions an error message, grep the codebase for that string to locate the source.
-- If the user says "the X command does Y wrong", find X's implementation and quote the offending lines.
-- If the user mentions a config value, look it up in the config file.
+- If the user describes a bug in a specific subcommand ('i report', 'i explain', natural-language 'i'), find the implementation in internal/cli/ and read the relevant region.
+- If the user quotes an error or log line, grep the codebase for that string to locate the source.
+- If the user describes a behavior gap ("I expected 'i' to read ~/.zshrc but it didn't"), find where 'i' builds its model context or chooses tools, and quote the offending lines.
+- If the user mentions a config value, look it up in the config loader (internal/config/).
+Do NOT investigate the embedded task itself (don't go read the user's ~/.zshrc, don't research whatever external tool they mentioned). That is not the subject of the issue.
 
 When you have enough evidence, return approach=inform with a concise evidence summary in stdout_to_user. Plain text or short bullets, not JSON. Cite file paths with line numbers (file.go:123) where possible. Stay under ~30 lines.
 
-Only return approach=inform on step 1 (skipping all tools) if the user's input is purely a feature request with no existing code to ground against (e.g. "add a new command called X that does Y"). Otherwise: tools first, answer second.`
+Only return approach=inform on step 1 (skipping all tools) if the user's input is purely a feature request for the CLI with no existing code to ground against (e.g. "add a new 'i X' subcommand that does Y"). Otherwise: tools first, answer second.`
 	prompt := sys + "\n\nUser input:\n" + userInput
 	tctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
@@ -393,6 +411,9 @@ func askForProposals(ctx context.Context, eng *engine.Engine, be model.Backend, 
 	var sys string
 	if strict {
 		sys = `Respond with ONLY a raw JSON array. No prose. No markdown code fences. No preamble.
+
+SCOPE: Each proposal is about the 'intent' CLI ('i') itself — how it should behave differently. NOT about tasks the user embedded in the feedback. If the input quotes a prior 'i' invocation or its output, treat that as EVIDENCE of a CLI behavior, not as a feature to implement.
+
 Schema: [{"title": string, "body": string, "labels": string[], "kind": "bug" | "feature" | "doc"}]
 Put the array into stdout_to_user with approach=inform.
 
@@ -405,7 +426,13 @@ the final shape.`
 		// Concrete one-shot example steers small models better than a
 		// field-by-field description. We keep the verbose instruction
 		// short so it doesn't crowd out the example in a small ctx.
-		sys = `Convert the user's input into a JSON array of GitHub issue proposals.
+		// The failure-transcript example is load-bearing: without it
+		// the small model files issues about the user's embedded task
+		// instead of the CLI behavior bug being reported.
+		sys = `Convert the user's feedback about the 'intent' CLI into a JSON array of GitHub issue proposals for its own repo.
+
+SCOPE: Every proposal is about 'intent' / 'i' behavior. If the feedback embeds a prior 'i' invocation — the user's prompt, a preview, a generated script — that is evidence of a CLI bug, not a feature request to implement. One failure transcript = one CLI issue, not one issue per topic mentioned inside it.
+
 Set approach=inform. Put the array (and ONLY the array, with no surrounding prose) in stdout_to_user.
 Each item: {"title": short <=80 chars, "body": markdown, "labels": string[], "kind": "bug"|"feature"|"doc"}.
 labels: ["bug","needs-triage"] for bugs; ["enhancement","needs-triage"] for features; ["documentation"] for docs.
@@ -415,12 +442,19 @@ git_status, which, help) BEFORE producing the final answer to ground titles and
 bodies in real evidence — file paths, error strings, line numbers, repo state.
 The FINAL response must still be approach=inform with the JSON array.
 
-Example:
+Example A (direct feedback):
   User input: "The CLI crashes when I pipe empty stdin. Also we should add colour."
   stdout_to_user: [
     {"title":"CLI crashes on empty piped stdin","body":"Reproduction: ...","labels":["bug","needs-triage"],"kind":"bug"},
     {"title":"Add colour output to CLI","body":"Improve readability by ...","labels":["enhancement","needs-triage"],"kind":"feature"}
-  ]`
+  ]
+
+Example B (failure transcript):
+  User input: "Failure Case Report: I expected 'i' to read my ~/.zshrc before editing it. Instead it emitted a bash snippet in a quote block. Below: i \"update my agi alias...\" -> [zsh script preview]"
+  stdout_to_user: [
+    {"title":"Ground file-edit generations in the actual file contents","body":"Observed: 'i' produced a zsh snippet for editing ~/.zshrc without first reading the file. Expected: 'i' should read_file(~/.zshrc), then produce an editing command that modifies the real content.\n\nEvidence (quoted from report):\n> i \"update my agi alias...\" -> [zsh script preview]","labels":["bug","needs-triage"],"kind":"bug"}
+  ]
+  (Note: we do NOT propose "Add --profile support to the AGI alias" — that was the user's task, not a CLI bug.)`
 	}
 	prompt := sys + "\n\nUser input:\n" + userInput
 	tctx, cancel := context.WithTimeout(ctx, 60*time.Second)
@@ -615,9 +649,27 @@ func offerSynthesizedProposal(userInput, rawModelOutput string, autoYes bool) []
 
 // synthesizeTitle takes the first sentence-ish span of user input and
 // trims it to ~80 chars so the synthesized issue has a title that
-// roughly reflects what they asked for.
+// roughly reflects what they asked for. Strips common meta-prefixes
+// ("Failure Case Report:", "Bug Report:", etc.) up front so the
+// resulting title describes the subject, not the form.
 func synthesizeTitle(userInput string) string {
 	s := strings.TrimSpace(userInput)
+	// Strip meta-framing prefixes the user often adds when reporting a
+	// CLI failure. These describe what the input IS, not what it's
+	// ABOUT, and they eat title real estate. Case-insensitive, one
+	// pass — we only care about the outer layer.
+	for _, prefix := range []string{
+		"failure case report:",
+		"failure report:",
+		"bug report:",
+		"feature request:",
+		"feedback:",
+	} {
+		if len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix) {
+			s = strings.TrimSpace(s[len(prefix):])
+			break
+		}
+	}
 	// Prefer the first sentence boundary.
 	for _, sep := range []string{". ", "? ", "! ", "\n"} {
 		if i := strings.Index(s, sep); i > 0 && i < 120 {

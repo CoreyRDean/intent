@@ -79,6 +79,25 @@ func TestSynthesizeTitle(t *testing.T) {
 			in:   "Really, really, really long description that keeps going and going far past the eighty-character soft title limit we enforce",
 			want: "Really, really, really long description that keeps going and going far past t...",
 		},
+		// Prefix stripping: when the user frames their feedback as a
+		// failure/bug report, the prefix is noise that eats title real
+		// estate. These cases cover the common variants.
+		{
+			in:   "Failure Case Report: i did not read my ~/.zshrc before editing it",
+			want: "i did not read my ~/.zshrc before editing it",
+		},
+		{
+			in:   "failure report: crash on startup",
+			want: "crash on startup",
+		},
+		{
+			in:   "Bug Report: exit code is 0 even when the backend fails",
+			want: "exit code is 0 even when the backend fails",
+		},
+		{
+			in:   "Feature request: add colour to the proposal preview",
+			want: "add colour to the proposal preview",
+		},
 	}
 	for _, tc := range cases {
 		got := synthesizeTitle(tc.in)
