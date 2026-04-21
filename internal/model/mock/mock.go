@@ -26,12 +26,13 @@ func (b *Backend) Available(ctx context.Context) error { return nil }
 func (b *Backend) Complete(ctx context.Context, req model.CompleteRequest) (*model.Response, error) {
 	if cmd := os.Getenv("INTENT_MOCK_CMD"); cmd != "" {
 		return &model.Response{
-			IntentSummary: "test-override",
-			Approach:      model.ApproachCommand,
-			Command:       cmd,
-			Description:   "test-override command",
-			Risk:          model.RiskDestructive,
-			Confidence:    model.ConfidenceHigh,
+			IntentSummary:   "test-override",
+			Approach:        model.ApproachCommand,
+			Command:         cmd,
+			Description:     "test-override command",
+			Risk:            model.RiskDestructive,
+			ExpectedRuntime: model.RuntimeInstant,
+			Confidence:      model.ConfidenceHigh,
 		}, nil
 	}
 	prompt := lastUser(req.Messages)
