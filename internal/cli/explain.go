@@ -45,7 +45,39 @@ func cmdExplain(ctx context.Context, args []string) int {
 	verboseOn := vl.Enabled()
 	store, _ := cache.Open(dirs.SkillsCachePath())
 	eng := engine.New(store)
-	prompt := fmt.Sprintf("Explain in plain English what this shell command does. Do not run it. Set approach=inform and put your explanation in stdout_to_user.\n\nCommand:\n%s", cmd)
+	prompt := fmt.Sprintf(`Explain in plain English what THIS specific shell invocation does when run:
+
+    %s
+
+HARD RULE — TOOL USE IS MANDATORY:
+Your response on step 1 of this turn MUST be approach=tool_call. Returning approach=inform on step 1 is a hard error and will be rejected. You MUST investigate the command with the read-only tool catalog before producing any final answer. Do NOT execute the user's command itself.
+
+REQUIRED TOOL SEQUENCE (run these in order; skip a step only when its exception applies):
+  1. tool_call which({"name": "<primary binary>"}) — confirm the binary exists.
+  2. tool_call help({"name": "<primary binary>"}) — read its actual help/man output. Read carefully: find the section that applies to the SPECIFIC flags, operands, and stdin/stdout behaviour used in THIS invocation. Do not summarize the tool's general purpose; find the exact behaviour for THIS usage.
+  3. For each file operand or redirection target (e.g. the "test.md" in "yk < test.md", the "out.txt" in "cmd > out.txt"): tool_call head_file({"path": "<file>", "lines": 20}) so you know what is actually in the file the command will read, or what file the command will overwrite.
+  4. Only AFTER tools have run and you have concrete evidence, return approach=inform with the explanation in stdout_to_user.
+
+EXCEPTION — you may skip steps 1 and 2 ONLY if the primary binary is in this exact list of common UNIX tools: ls, cat, grep, awk, sed, find, git, curl, echo, printf, wc, sort, uniq, head, tail, mv, cp, rm, mkdir, touch, chmod, chown, ln, tar, gzip, gunzip, ssh, scp, ps, kill, ping, df, du, free, top, env, export, source, true, false, test, basename, dirname, xargs, tee, less, more, diff, patch. For ANY binary not in that list (e.g. "yk", "fd", "rg", "bat", "jq", "yq", "fzf", or anything custom): which + help are MANDATORY.
+
+BANNED PHRASES IN YOUR FINAL ANSWER (these are tells that you guessed instead of investigating; if you find yourself wanting to write one, go back and run more tools):
+- "according to its implementation"
+- "depending on the tool's functionality"
+- "may include ... or other data"
+- "indicates whether the operation was successful"
+- "processes it according to"
+- "X is a Y tool that does Z" (state what THIS invocation does, not what the binary does)
+
+FINAL ANSWER SHAPE (after tools have run):
+- 1–4 sentences. Concrete. Specific to THIS invocation.
+- Open with a verb describing what THIS invocation does (e.g. "Pipes the contents of test.md into yk's stdin, which pushes that text onto yk's clipboard stack."). Not "X is a tool that ...".
+- Account for EVERY operand, flag, redirection, and pipe in the command. Nothing unexplained.
+- Where the command reads a file, briefly note what's in the file based on head_file.
+- Cite specific behaviour from the help output (e.g. "per yk --help, when invoked with no flags it reads stdin and pushes it to the stack").
+- Name the observable result: what gets printed, what changes on disk, what exit code is meaningful.
+
+Command to explain (verbatim):
+%s`, cmd, cmd)
 	tctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 

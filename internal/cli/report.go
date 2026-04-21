@@ -80,13 +80,33 @@ func cmdReport(ctx context.Context, args []string) int {
 	// this catches any early error path we miss.
 	defer sp.Stop()
 
+	// Agentic preflight: let the model investigate the user's report
+	// with read-only tools (read_file, grep, find_files, list_dir,
+	// git_status, head_file, stat, which, help) and return a concise
+	// evidence summary. This grounds proposal titles/bodies in real
+	// file paths, error strings, and repo state instead of letting the
+	// small local model hallucinate generic descriptions.
+	//
+	// We do this BEFORE the structured call because schema-constrained
+	// sampling can't host tool calls — the model is forced to emit the
+	// final shape immediately. So we gather evidence first (free-form,
+	// agentic) and feed it into the structured call as augmented input.
+	store, _ := cache.Open(dirs.SkillsCachePath())
+	eng := engine.New(store)
+	sp.SetLabel("investigating with tools...")
+	evidence := gatherReportEvidence(ctx, eng, be, userInput, sp)
+	augmented := userInput
+	if evidence != "" {
+		augmented = userInput + "\n\nEvidence gathered from a read-only investigation of the workspace:\n" + evidence
+	}
+
 	// Preferred path: if the backend supports schema-enforced structured
 	// output (llamafile, llama.cpp, OpenAI-compatible), ask for proposals
 	// in a task-specific schema. The grammar constrains the model at
 	// token-generation time, so even a 1.5B local model cannot escape
 	// into prose. No parsing heuristics required.
 	sp.SetLabel("asking model for proposals...")
-	proposals, structuredErr := askProposalsStructured(ctx, be, userInput)
+	proposals, structuredErr := askProposalsStructured(ctx, be, augmented)
 	rawOutput := ""
 
 	if structuredErr != nil {
@@ -94,14 +114,13 @@ func cmdReport(ctx context.Context, args []string) int {
 		// as a string) with best-effort extraction. This is for backends
 		// that don't support response_format schemas, or if llamafile
 		// returned schema-compliant JSON that was still empty for some
-		// reason.
+		// reason. The fallback uses the same engine instance (and so
+		// the same tool catalog) on the augmented input.
 		sp.SetLabel("retrying without schema enforcement...")
-		store, _ := cache.Open(dirs.SkillsCachePath())
-		eng := engine.New(store)
-		proposals, rawOutput = askForProposals(ctx, eng, be, userInput, false)
+		proposals, rawOutput = askForProposals(ctx, eng, be, augmented, false)
 		if proposals == nil {
 			sp.SetLabel("retrying with strict JSON prompt...")
-			proposals, rawOutput = askForProposals(ctx, eng, be, userInput, true)
+			proposals, rawOutput = askForProposals(ctx, eng, be, augmented, true)
 		}
 	}
 	if proposals == nil {
@@ -309,6 +328,63 @@ func askProposalsStructured(ctx context.Context, be model.Backend, userInput str
 	return out.Proposals, nil
 }
 
+// gatherReportEvidence runs an agentic, read-only investigation of the
+// user's bug report against the workspace. The result is a free-form
+// evidence summary suitable for prepending to the user's input before
+// the structured proposal call.
+//
+// We do this as a separate engine pass — not folded into the structured
+// call — because schema-constrained sampling forecloses tool_call: the
+// model is forced to emit the final shape immediately. Splitting the
+// turn lets us keep small-model shape guarantees AND ground the output
+// in real files and error strings.
+//
+// On any failure (no tools used, model refuses, timeout) we return ""
+// and let the caller fall through to the un-augmented structured call.
+// Evidence gathering is opportunistic, not load-bearing.
+func gatherReportEvidence(ctx context.Context, eng *engine.Engine, be model.Backend, userInput string, sp *tui.Spinner) string {
+	sys := `You are gathering evidence for a GitHub issue report against the current workspace.
+
+The user's feedback is below. You MUST investigate before answering — start with at least one tool call. Default first move: git_status() to confirm the repo, then find_files / grep to locate whatever the user is talking about. Then read_file / head_file the relevant region.
+
+Examples of what to gather:
+- If the user describes a bug in a specific subcommand, find the file that implements it (find_files / grep) and read the relevant region.
+- If the user mentions an error message, grep the codebase for that string to locate the source.
+- If the user says "the X command does Y wrong", find X's implementation and quote the offending lines.
+- If the user mentions a config value, look it up in the config file.
+
+When you have enough evidence, return approach=inform with a concise evidence summary in stdout_to_user. Plain text or short bullets, not JSON. Cite file paths with line numbers (file.go:123) where possible. Stay under ~30 lines.
+
+Only return approach=inform on step 1 (skipping all tools) if the user's input is purely a feature request with no existing code to ground against (e.g. "add a new command called X that does Y"). Otherwise: tools first, answer second.`
+	prompt := sys + "\n\nUser input:\n" + userInput
+	tctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	res, err := eng.Run(tctx, prompt, engine.Options{
+		Backend:      be,
+		MaxToolSteps: 0, // engine bumps to default 12
+		OnPhase: func(p string) {
+			if sp == nil {
+				return
+			}
+			// Wrap the engine's generic labels in our outer-phase
+			// context so the spinner doesn't sit at "Understanding..."
+			// for 30s during local-model inference. The engine emits
+			// "Understanding..." before the first model call and
+			// "Reading context (toolname)..." for each tool call.
+			switch p {
+			case "Understanding...":
+				sp.SetLabel("investigating workspace...")
+			default:
+				sp.SetLabel("investigating: " + p)
+			}
+		},
+	})
+	if err != nil || res == nil || res.Response == nil {
+		return ""
+	}
+	return strings.TrimSpace(res.Response.StdoutToUser)
+}
+
 // askForProposals runs a single round-trip through the engine and tries
 // to extract a proposal list from the model's output. When strict=true
 // we use a short, pointed prompt that survives the small-model "helpful
@@ -318,7 +394,13 @@ func askForProposals(ctx context.Context, eng *engine.Engine, be model.Backend, 
 	if strict {
 		sys = `Respond with ONLY a raw JSON array. No prose. No markdown code fences. No preamble.
 Schema: [{"title": string, "body": string, "labels": string[], "kind": "bug" | "feature" | "doc"}]
-Put the array into stdout_to_user with approach=inform.`
+Put the array into stdout_to_user with approach=inform.
+
+You MAY use read-only tools (read_file, head_file, list_dir, grep, find_files,
+git_status, which, help) BEFORE the final answer to ground titles and bodies in
+real file paths, error messages, or repo state. The FINAL response must still
+be approach=inform with the JSON array — tools are for evidence gathering, not
+the final shape.`
 	} else {
 		// Concrete one-shot example steers small models better than a
 		// field-by-field description. We keep the verbose instruction
@@ -327,6 +409,11 @@ Put the array into stdout_to_user with approach=inform.`
 Set approach=inform. Put the array (and ONLY the array, with no surrounding prose) in stdout_to_user.
 Each item: {"title": short <=80 chars, "body": markdown, "labels": string[], "kind": "bug"|"feature"|"doc"}.
 labels: ["bug","needs-triage"] for bugs; ["enhancement","needs-triage"] for features; ["documentation"] for docs.
+
+You MAY use read-only tools (read_file, head_file, list_dir, grep, find_files,
+git_status, which, help) BEFORE producing the final answer to ground titles and
+bodies in real evidence — file paths, error strings, line numbers, repo state.
+The FINAL response must still be approach=inform with the JSON array.
 
 Example:
   User input: "The CLI crashes when I pipe empty stdin. Also we should add colour."
