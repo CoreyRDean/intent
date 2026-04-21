@@ -131,9 +131,13 @@ Usage:
   i <subcommand> [args]
 
 Common:
-  i ping google's dns                # natural language (default)
+  i "ping google's dns"              # natural language (default)
   i list large files in this repo
   cat foo.csv | i extract emails
+
+Tip:
+  If your prompt includes apostrophes (what's, don't), wrap it in
+  double quotes for reliable shell parsing across environments.
 
 Subcommands:
   init        First-run setup (model, daemon, completions).

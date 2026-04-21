@@ -103,6 +103,9 @@ func TestHelpFlag(t *testing.T) {
 	if !strings.Contains(stdout, "Usage:") {
 		t.Fatalf("expected stdout to contain 'Usage:', got: %q", stdout)
 	}
+	if !strings.Contains(stdout, `i "ping google's dns"`) {
+		t.Fatalf("expected help to include quoted apostrophe example, got: %q", stdout)
+	}
 }
 
 func TestNoArgs(t *testing.T) {
