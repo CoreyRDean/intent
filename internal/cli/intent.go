@@ -25,21 +25,34 @@ import (
 
 // intentFlags is the parsed v1 flag set for natural-language mode.
 type intentFlags struct {
-	yes      bool
-	dry      bool
-	sandbox  bool
-	ro       bool
-	json     bool
-	raw      bool
-	quiet    bool
-	boolean  bool
-	explain  bool
-	noCache  bool
-	timeout  time.Duration
-	backend  string
-	modelTag string
-	n        int
-	prompt   string
+	yes        bool
+	dry        bool
+	sandbox    bool
+	ro         bool
+	fromIntent bool
+	json       bool
+	raw        bool
+	quiet      bool
+	boolean    bool
+	explain    bool
+	noCache    bool
+	timeout    time.Duration
+	backend    string
+	modelTag   string
+	context    stringListFlag
+	n          int
+	prompt     string
+}
+
+type stringListFlag []string
+
+func (s *stringListFlag) String() string {
+	return strings.Join(*s, ",")
+}
+
+func (s *stringListFlag) Set(v string) error {
+	*s = append(*s, strings.TrimSpace(v))
+	return nil
 }
 
 func parseIntentFlags(args []string) (*intentFlags, error) {
@@ -51,6 +64,7 @@ func parseIntentFlags(args []string) (*intentFlags, error) {
 	fs.BoolVar(&out.dry, "dry", false, "")
 	fs.BoolVar(&out.sandbox, "sandbox", false, "")
 	fs.BoolVar(&out.ro, "ro", false, "")
+	fs.BoolVar(&out.fromIntent, "from-intent", false, "")
 	fs.BoolVar(&out.json, "json", false, "")
 	fs.BoolVar(&out.raw, "raw", false, "")
 	fs.BoolVar(&out.quiet, "quiet", false, "")
@@ -62,17 +76,19 @@ func parseIntentFlags(args []string) (*intentFlags, error) {
 	fs.StringVar(&out.backend, "backend", "", "")
 	fs.StringVar(&out.modelTag, "model", "", "")
 	fs.IntVar(&out.n, "n", 1, "")
+	fs.Var(&out.context, "context", "")
 
 	// Allow flags interleaved with the natural-language prompt.
 	// We pre-extract recognized flags and treat the rest as the prompt.
 	known := map[string]bool{
 		"--yes": true, "-y": true,
-		"--dry":     true,
-		"--sandbox": true,
-		"--ro":      true,
-		"--json":    true,
-		"--raw":     true,
-		"--quiet":   true, "-q": true,
+		"--dry":         true,
+		"--sandbox":     true,
+		"--ro":          true,
+		"--from-intent": true,
+		"--json":        true,
+		"--raw":         true,
+		"--quiet":       true, "-q": true,
 		"--bool":     true,
 		"--explain":  true,
 		"--no-cache": true,
@@ -81,6 +97,7 @@ func parseIntentFlags(args []string) (*intentFlags, error) {
 		"--timeout": true,
 		"--backend": true,
 		"--model":   true,
+		"--context": true,
 		"-n":        true,
 	}
 	flagsToParse := []string{}
@@ -134,6 +151,7 @@ func parseIntentFlags(args []string) (*intentFlags, error) {
 		out.quiet = true
 	}
 	if !stdinTTY && os.Getenv("INTENT_PIPE_FROM") == "intent" {
+		out.fromIntent = true
 		out.json = true
 	}
 	// Piped stdin means there is no usable TTY to read a y/n from, so
@@ -206,10 +224,14 @@ func cmdIntent(ctx context.Context, args []string) int {
 	}
 
 	// Build the prompt: include stdin as context unless --raw says otherwise.
-	finalPrompt := fl.prompt
-	if stdinData != "" {
-		finalPrompt = fl.prompt + "\n\n[stdin contents follow]\n" + truncateForPrompt(stdinData, 8000)
-	}
+	// When --from-intent is set (either explicitly or auto-enabled by
+	// INTENT_PIPE_FROM=intent), the stdin bytes are the output of a
+	// prior intent invocation rather than opaque data the downstream
+	// command should operate on. Frame them accordingly so the model
+	// treats them as context, not as content to manipulate; when the
+	// upstream used --json we further unpack the envelope into a short
+	// semantic summary.
+	finalPrompt := fl.prompt + formatStdinForPrompt(stdinData, fl.fromIntent)
 
 	// Build the backend.
 	backendName := cfg.Backend
@@ -236,6 +258,7 @@ func cmdIntent(ctx context.Context, args []string) int {
 	vl.KV("flags.json", fl.json)
 	vl.KV("flags.sandbox", fl.sandbox)
 	vl.KV("flags.no_cache", fl.noCache)
+	vl.KV("flags.from_intent", fl.fromIntent)
 
 	// Cache & engine.
 	store, _ := cache.Open(dirs.SkillsCachePath())
@@ -266,6 +289,7 @@ func cmdIntent(ctx context.Context, args []string) int {
 		MaxToolSteps: cfg.MaxToolSteps,
 		UseCache:     !fl.noCache && cfg.CacheEnabled,
 		WriteCache:   !fl.noCache && cfg.CacheEnabled,
+		UserContext:  []string(fl.context),
 		ToolHost:     host,
 		OnPhase: func(p string) {
 			if sp != nil {
@@ -665,4 +689,64 @@ func truncateForPrompt(s string, max int) string {
 		return s
 	}
 	return s[:max] + "\n[... truncated " + fmt.Sprint(len(s)-max) + " bytes ...]"
+}
+
+// formatStdinForPrompt frames piped stdin for the model. When fromIntent
+// is false it is labelled as raw stdin (the long-standing behavior). When
+// fromIntent is true it is labelled as upstream-intent context, and if the
+// payload is the JSON envelope emitted by emitJSON we unpack it into a
+// short semantic summary so the downstream prompt does not have to teach
+// the model how to parse the envelope.
+func formatStdinForPrompt(stdinData string, fromIntent bool) string {
+	if stdinData == "" {
+		return ""
+	}
+	if fromIntent {
+		if summary, ok := summarizeIntentEnvelope(stdinData); ok {
+			return "\n\n[upstream intent result]\n" + summary
+		}
+		return "\n\n[upstream intent result follows]\n" + truncateForPrompt(stdinData, 8000)
+	}
+	return "\n\n[stdin contents follow]\n" + truncateForPrompt(stdinData, 8000)
+}
+
+// summarizeIntentEnvelope attempts to parse the JSON envelope produced by
+// emitJSON and render the useful fields as a compact natural-language
+// summary. Returns ok=false if the payload is not the envelope shape, so
+// the caller can fall back to raw framing.
+func summarizeIntentEnvelope(data string) (string, bool) {
+	trimmed := strings.TrimSpace(data)
+	if trimmed == "" || trimmed[0] != '{' {
+		return "", false
+	}
+	var env struct {
+		IntentResponse *model.Response `json:"intent_response"`
+		ExitCode       *int            `json:"exit_code"`
+		Stdout         *string         `json:"stdout"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &env); err != nil {
+		return "", false
+	}
+	if env.IntentResponse == nil && env.ExitCode == nil && env.Stdout == nil {
+		return "", false
+	}
+	var b strings.Builder
+	if env.IntentResponse != nil {
+		if env.IntentResponse.IntentSummary != "" {
+			fmt.Fprintf(&b, "  summary: %s\n", env.IntentResponse.IntentSummary)
+		}
+		if env.IntentResponse.Command != "" {
+			fmt.Fprintf(&b, "  command: %s\n", env.IntentResponse.Command)
+		}
+		if env.IntentResponse.Description != "" {
+			fmt.Fprintf(&b, "  description: %s\n", env.IntentResponse.Description)
+		}
+	}
+	if env.ExitCode != nil {
+		fmt.Fprintf(&b, "  exit_code: %d\n", *env.ExitCode)
+	}
+	if env.Stdout != nil && strings.TrimSpace(*env.Stdout) != "" {
+		fmt.Fprintf(&b, "  stdout: %s\n", truncateForPrompt(*env.Stdout, 2000))
+	}
+	return b.String(), true
 }

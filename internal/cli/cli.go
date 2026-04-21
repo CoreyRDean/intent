@@ -166,6 +166,8 @@ Flags (in natural-language mode):
       --bool       Force a yes/no answer; map to exit code 0/1.
       --explain    Show plain-English breakdown without running.
       --no-cache   Don't read or write the skill cache.
+      --from-intent  Treat stdin as context from another intent invocation.
+      --context K=V  Add ad-hoc context for this invocation (repeatable).
       --backend X  Override backend for this call.
       --model X    Override model for this call.
       --timeout D  Hard cap (default 60s).

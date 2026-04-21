@@ -75,12 +75,13 @@ func (e *Engine) Run(ctx context.Context, prompt string, opts Options) (*Result,
 
 	// Cache key.
 	key := cache.Key(cache.KeyInputs{
-		Prompt:                prompt,
-		CwdFingerprint:        cache.CwdFingerprint(pack.Cwd, ""),
-		OS:                    pack.OS,
-		BinariesFingerprint:   cache.BinariesFingerprint(pack.AvailableBins),
-		BackendIdentity:       backendCacheIdentity(opts.Backend),
-		PromptTemplateVersion: model.PromptTemplateVersion,
+		Prompt:                 prompt,
+		CwdFingerprint:         cache.CwdFingerprint(pack.Cwd, ""),
+		OS:                     pack.OS,
+		BinariesFingerprint:    cache.BinariesFingerprint(pack.AvailableBins),
+		BackendIdentity:        backendCacheIdentity(opts.Backend),
+		PromptTemplateVersion:  model.PromptTemplateVersion,
+		UserContextFingerprint: cache.UserContextFingerprint(opts.UserContext),
 	})
 	res.CacheKey = key
 	vl.Section("engine")
