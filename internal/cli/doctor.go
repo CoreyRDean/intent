@@ -7,10 +7,21 @@ import (
 	"runtime"
 
 	"github.com/CoreyRDean/intent/internal/config"
+	"github.com/CoreyRDean/intent/internal/daemon"
 	intentruntime "github.com/CoreyRDean/intent/internal/runtime"
 	"github.com/CoreyRDean/intent/internal/state"
 	"github.com/CoreyRDean/intent/internal/version"
 )
+
+type daemonStatusCaller interface {
+	Call(req daemon.Request) (*daemon.Response, error)
+}
+
+var newDaemonStatusClient = func(socket string) daemonStatusCaller {
+	return daemon.NewClient(socket)
+}
+
+var daemonServiceInstalled = daemon.IsInstalled
 
 func cmdDoctor(_ context.Context, _ []string) int {
 	ok := true
@@ -36,18 +47,23 @@ func cmdDoctor(_ context.Context, _ []string) int {
 		check("cache directory", dirs.Cache, true)
 	}
 
-	cfg, _ := config.Load(dirs.ConfigPath())
-	if cfg != nil {
-		check("config", fmt.Sprintf("backend=%s model=%s", cfg.Backend, cfg.Model), true)
+	if err == nil {
+		cfg, _ := config.Load(dirs.ConfigPath())
+		if cfg != nil {
+			check("config", fmt.Sprintf("backend=%s model=%s", cfg.Backend, cfg.Model), true)
+		}
+
+		rt := intentruntime.New(dirs.Cache)
+		check("llamafile runtime",
+			fmt.Sprintf("expected at %s", rt.LlamafilePath()),
+			rt.HaveLlamafile())
+
+		modelFile, modelStatus := resolveModelCheck(cfg)
+		check("model", fmt.Sprintf("%s — %s", modelStatus, rt.ModelPath(modelFile)), rt.HaveModel(modelFile))
+
+		daemonStatus, daemonOK := doctorDaemonStatus(dirs)
+		check("daemon", daemonStatus, daemonOK)
 	}
-
-	rt := intentruntime.New(dirs.Cache)
-	check("llamafile runtime",
-		fmt.Sprintf("expected at %s", rt.LlamafilePath()),
-		rt.HaveLlamafile())
-
-	modelFile, modelStatus := resolveModelCheck(cfg)
-	check("model", fmt.Sprintf("%s — %s", modelStatus, rt.ModelPath(modelFile)), rt.HaveModel(modelFile))
 
 	// Sandbox tooling.
 	switch runtime.GOOS {
@@ -90,4 +106,27 @@ func okStr(err error) string {
 		return "found"
 	}
 	return "missing"
+}
+
+func doctorDaemonStatus(dirs state.Dirs) (string, bool) {
+	installed := daemonServiceInstalled(daemonLabel)
+	resp, err := newDaemonStatusClient(dirs.SocketPath()).Call(daemon.Request{Op: daemon.OpStatus})
+	if err != nil {
+		if installed {
+			return "installed but not responding", false
+		}
+		return "not running (optional)", true
+	}
+	if !resp.OK {
+		return "unhealthy: " + resp.Error, false
+	}
+
+	serviceState := "no"
+	if installed {
+		serviceState = "yes"
+	}
+	if endpoint, _ := resp.Data["llamafile_endpoint"].(string); endpoint != "" {
+		return fmt.Sprintf("running (service installed: %s, endpoint: %s)", serviceState, endpoint), true
+	}
+	return fmt.Sprintf("running (service installed: %s)", serviceState), true
 }
