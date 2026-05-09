@@ -487,6 +487,8 @@ Update behavior:
 
 Converts natural language into one or more GitHub issues against `CoreyRDean/intent`:
 
+`i report` accepts natural language from argv, stdin, or both. When both are present, argv text comes first and stdin is appended after it.
+
 1. Parse the user's input. The model returns an array of `{title, body, labels, kind}` proposals.
 2. For each proposal, query GitHub Search (`is:issue repo:CoreyRDean/intent <terms>`) for the top 5 candidates.
 3. For each candidate, compute a similarity score (token-set ratio + embedding-similarity if a small embedding model is available; otherwise just token-set ratio). If ≥0.85, treat as duplicate.
