@@ -31,7 +31,9 @@ func cmdReport(ctx context.Context, args []string) int {
 			prompt = append(prompt, a)
 		}
 	}
-	if len(prompt) == 0 {
+	stdinData, _ := readStdinIfPiped(reportStdinWait(ctx))
+	userInput := buildReportUserInput(prompt, stdinData)
+	if userInput == "" {
 		errf("usage: i report <natural language describing one or more bugs/features>")
 		return 1
 	}
@@ -54,7 +56,6 @@ func cmdReport(ctx context.Context, args []string) int {
 		errf("i report requires a real backend — run 'i doctor' to diagnose")
 		return 3
 	}
-	userInput := strings.Join(prompt, " ")
 
 	vl := verbose.FromContext(ctx)
 	vl.Section("report")
@@ -246,6 +247,28 @@ func trim(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+func reportStdinWait(ctx context.Context) time.Duration {
+	if deadline, ok := ctx.Deadline(); ok {
+		if wait := time.Until(deadline); wait > 0 {
+			return wait
+		}
+	}
+	return 60 * time.Second
+}
+
+func buildReportUserInput(promptArgs []string, stdinData string) string {
+	argText := strings.TrimSpace(strings.Join(promptArgs, " "))
+	stdinText := strings.TrimSpace(stdinData)
+	switch {
+	case argText == "":
+		return stdinText
+	case stdinText == "":
+		return argText
+	default:
+		return argText + "\n\n" + stdinText
+	}
 }
 
 // reportSchemaJSON is the JSON schema the model's output must conform

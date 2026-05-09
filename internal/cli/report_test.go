@@ -106,3 +106,42 @@ func TestSynthesizeTitle(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildReportUserInput(t *testing.T) {
+	cases := []struct {
+		name  string
+		args  []string
+		stdin string
+		want  string
+	}{
+		{
+			name: "args_only",
+			args: []string{"first", "natural", "language"},
+			want: "first natural language",
+		},
+		{
+			name:  "stdin_only",
+			stdin: "second natural language\n",
+			want:  "second natural language",
+		},
+		{
+			name:  "args_then_stdin",
+			args:  []string{"first", "natural", "language"},
+			stdin: "second natural language\n",
+			want:  "first natural language\n\nsecond natural language",
+		},
+		{
+			name:  "ignores_blank_stdin",
+			args:  []string{"first", "natural", "language"},
+			stdin: "\n\n",
+			want:  "first natural language",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := buildReportUserInput(tc.args, tc.stdin); got != tc.want {
+				t.Fatalf("buildReportUserInput(%q, %q)=%q want %q", tc.args, tc.stdin, got, tc.want)
+			}
+		})
+	}
+}

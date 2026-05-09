@@ -14,6 +14,8 @@ $ i "check if google's dns server is online"
 
 It is **local-first** by default (no network required after first run, no prompts leave your machine), **safe by construction** (risk-classified, deterministic guards, audit log), and **composable** (`i "ping google's dns" | i "if reachable exit 0 else exit 1"`).
 
+That composability applies to subcommands that consume natural language too: `i report "first problem" < extra-notes.txt` appends the piped text after the command-line text before proposing issues.
+
 > **Status: pre-alpha.** The binary builds and the mock backend round-trips the full prompt → propose → confirm → run loop, but the local model runtime, daemon, and self-update flows are still being wired up. See [`INTENT.md`](./INTENT.md) for the full project charter, [`docs/SPEC.md`](./docs/SPEC.md) for the implementation contract, and [open issues](https://github.com/CoreyRDean/intent/issues) for the roadmap.
 
 ## Building from source
