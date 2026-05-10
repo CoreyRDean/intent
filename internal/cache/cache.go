@@ -26,6 +26,10 @@ type KeyInputs struct {
 	BinariesFingerprint   string
 	BackendIdentity       string
 	PromptTemplateVersion string
+	// ProjectRCFingerprint captures .intentrc directives that are
+	// rendered into the system prompt. Whitespace-only content hashes
+	// to empty so users without a real project config keep today's key.
+	ProjectRCFingerprint string
 	// UserContextFingerprint captures any --context values that are
 	// injected into the system prompt. Order is preserved because the
 	// model sees them in order; see UserContextFingerprint.
@@ -41,10 +45,24 @@ func Key(in KeyInputs) string {
 		in.BinariesFingerprint,
 		in.BackendIdentity,
 		in.PromptTemplateVersion,
+		in.ProjectRCFingerprint,
 		in.UserContextFingerprint,
 	}
 	h := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
 	return hex.EncodeToString(h[:])
+}
+
+// ProjectRCFingerprint returns a stable fingerprint of .intentrc
+// directives that are injected into the system prompt. Blank or
+// whitespace-only content yields "" so the baseline cache key shape
+// stays unchanged for repos without project directives.
+func ProjectRCFingerprint(contents string) string {
+	trimmed := strings.TrimSpace(contents)
+	if trimmed == "" {
+		return ""
+	}
+	h := sha256.Sum256([]byte(trimmed))
+	return hex.EncodeToString(h[:8])
 }
 
 // UserContextFingerprint returns a stable fingerprint of the ordered

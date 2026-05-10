@@ -151,3 +151,64 @@ func TestRunCacheKeyIncludesUserContext(t *testing.T) {
 		t.Fatalf("cache key ignored --context order: %q", forward.CacheKey)
 	}
 }
+
+func TestRunCacheKeyIncludesProjectRC(t *testing.T) {
+	eng := New(nil)
+	ctx := context.Background()
+	backend := &cacheIdentityBackend{
+		name:          "llamafile",
+		cacheIdentity: "llamafile|http://127.0.0.1:8080|qwen2.5-coder-3b",
+	}
+
+	base, err := eng.Run(ctx, "list files", Options{Backend: backend})
+	if err != nil {
+		t.Fatalf("run base: %v", err)
+	}
+
+	withProjectRC, err := eng.Run(ctx, "list files", Options{
+		Backend:   backend,
+		ProjectRC: "prefer rg over grep",
+	})
+	if err != nil {
+		t.Fatalf("run with project rc: %v", err)
+	}
+	if base.CacheKey == withProjectRC.CacheKey {
+		t.Fatalf("cache key collision when .intentrc directives were added: %q", base.CacheKey)
+	}
+
+	otherProjectRC, err := eng.Run(ctx, "list files", Options{
+		Backend:   backend,
+		ProjectRC: "prefer fd over find",
+	})
+	if err != nil {
+		t.Fatalf("run with other project rc: %v", err)
+	}
+	if withProjectRC.CacheKey == otherProjectRC.CacheKey {
+		t.Fatalf("cache key collision across distinct .intentrc directives: %q", withProjectRC.CacheKey)
+	}
+}
+
+func TestRunCacheKeyTreatsBlankProjectRCAsAbsent(t *testing.T) {
+	eng := New(nil)
+	ctx := context.Background()
+	backend := &cacheIdentityBackend{
+		name:          "llamafile",
+		cacheIdentity: "llamafile|http://127.0.0.1:8080|qwen2.5-coder-3b",
+	}
+
+	base, err := eng.Run(ctx, "list files", Options{Backend: backend})
+	if err != nil {
+		t.Fatalf("run base: %v", err)
+	}
+
+	blank, err := eng.Run(ctx, "list files", Options{
+		Backend:   backend,
+		ProjectRC: "  \n\t  ",
+	})
+	if err != nil {
+		t.Fatalf("run blank project rc: %v", err)
+	}
+	if base.CacheKey != blank.CacheKey {
+		t.Fatalf("blank .intentrc content should preserve the baseline cache key: base=%q blank=%q", base.CacheKey, blank.CacheKey)
+	}
+}
