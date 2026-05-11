@@ -1,6 +1,13 @@
 package cli
 
-import "testing"
+import (
+	"bytes"
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/CoreyRDean/intent/internal/report"
+)
 
 // TestExtractProposals covers the real-world failure modes small local
 // models have produced when asked to emit issue-proposal JSON.
@@ -143,5 +150,147 @@ func TestBuildReportUserInput(t *testing.T) {
 				t.Fatalf("buildReportUserInput(%q, %q)=%q want %q", tc.args, tc.stdin, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestApplyReportMatches_DryRunSkipsWrites(t *testing.T) {
+	t.Parallel()
+
+	matches := []report.Match{
+		{
+			Proposal: report.Proposal{
+				Title: "Existing bug",
+				Body:  "comment body",
+			},
+			BestExisting: &report.SearchResult{
+				Number: 42,
+				Title:  "Existing bug",
+			},
+			Score:       0.91,
+			IsDuplicate: true,
+		},
+		{
+			Proposal: report.Proposal{
+				Title:  "New bug",
+				Body:   "new issue body",
+				Labels: []string{"bug", "needs-triage"},
+			},
+		},
+	}
+
+	var out bytes.Buffer
+	createCalls := 0
+	commentCalls := 0
+	anyCreated, anyFailed := applyReportMatches(
+		context.Background(),
+		&out,
+		matches,
+		map[string]bool{"bug": true},
+		false,
+		func(context.Context, report.Proposal) (string, error) {
+			createCalls++
+			return "", nil
+		},
+		func(context.Context, int, string) (string, error) {
+			commentCalls++
+			return "", nil
+		},
+	)
+
+	if anyCreated {
+		t.Fatal("dry run should not report created work")
+	}
+	if anyFailed {
+		t.Fatal("dry run should not report failures")
+	}
+	if createCalls != 0 || commentCalls != 0 {
+		t.Fatalf("dry run should skip writes, got create=%d comment=%d", createCalls, commentCalls)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		`duplicate of #42 "Existing bug"`,
+		"dry run only; pass --yes to post the comment",
+		"(dropping labels not on repo: [needs-triage])",
+		"labels: [bug]",
+		"would create a new issue (pass --yes to execute)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected output to contain %q, got:\n%s", want, got)
+		}
+	}
+}
+
+func TestApplyReportMatches_YesExecutesWrites(t *testing.T) {
+	t.Parallel()
+
+	matches := []report.Match{
+		{
+			Proposal: report.Proposal{
+				Title: "Existing bug",
+				Body:  "comment body",
+			},
+			BestExisting: &report.SearchResult{
+				Number: 42,
+				Title:  "Existing bug",
+			},
+			Score:       0.91,
+			IsDuplicate: true,
+		},
+		{
+			Proposal: report.Proposal{
+				Title:  "New bug",
+				Body:   "new issue body",
+				Labels: []string{"bug"},
+			},
+		},
+	}
+
+	var out bytes.Buffer
+	createCalls := 0
+	commentCalls := 0
+	anyCreated, anyFailed := applyReportMatches(
+		context.Background(),
+		&out,
+		matches,
+		map[string]bool{"bug": true},
+		true,
+		func(_ context.Context, p report.Proposal) (string, error) {
+			createCalls++
+			if p.Title != "New bug" {
+				t.Fatalf("unexpected issue title %q", p.Title)
+			}
+			return "https://github.com/CoreyRDean/intent/issues/99", nil
+		},
+		func(_ context.Context, number int, body string) (string, error) {
+			commentCalls++
+			if number != 42 {
+				t.Fatalf("unexpected comment target %d", number)
+			}
+			if !strings.Contains(body, "comment body") {
+				t.Fatalf("unexpected comment body %q", body)
+			}
+			return "https://github.com/CoreyRDean/intent/issues/42#issuecomment-1", nil
+		},
+	)
+
+	if !anyCreated {
+		t.Fatal("write mode should report created work")
+	}
+	if anyFailed {
+		t.Fatal("write mode should not report failures")
+	}
+	if createCalls != 1 || commentCalls != 1 {
+		t.Fatalf("write mode should execute both actions, got create=%d comment=%d", createCalls, commentCalls)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		"✓ commented: https://github.com/CoreyRDean/intent/issues/42#issuecomment-1",
+		"✓ created: https://github.com/CoreyRDean/intent/issues/99",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected output to contain %q, got:\n%s", want, got)
+		}
 	}
 }
