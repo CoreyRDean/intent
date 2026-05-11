@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -167,47 +168,15 @@ func cmdReport(ctx context.Context, args []string) int {
 	// Track the worst-case outcome so the overall command exit code
 	// reflects reality. Previously cmdReport always returned 0 even
 	// when every create failed, which hid failures from scripts.
-	anyFailed := false
-	anyCreated := false
-
-	for i, m := range matches {
-		fmt.Printf("\n[%d/%d] %s\n", i+1, len(matches), m.Proposal.Title)
-		if m.IsDuplicate {
-			fmt.Printf("  duplicate of #%d %q (score %.2f)\n", m.BestExisting.Number, m.BestExisting.Title, m.Score)
-			fmt.Printf("  → would comment with: %s\n", trim(m.Proposal.Body, 120))
-			if confirmReport(yes) {
-				url, err := report.CommentOnIssue(ctx, m.BestExisting.Number,
-					"From `i report`:\n\n"+m.Proposal.Body)
-				if err != nil {
-					errf("report: comment failed: %v", err)
-					anyFailed = true
-					continue
-				}
-				anyCreated = true
-				fmt.Printf("  ✓ commented: %s\n", url)
-			}
-		} else {
-			kept, dropped := report.FilterLabels(m.Proposal.Labels, known)
-			if len(dropped) > 0 {
-				fmt.Printf("  (dropping labels not on repo: %v)\n", dropped)
-			}
-			p := m.Proposal
-			p.Labels = kept
-			fmt.Printf("  new issue\n")
-			fmt.Printf("  labels: %v\n", p.Labels)
-			fmt.Printf("  body: %s\n", trim(p.Body, 200))
-			if confirmReport(yes) {
-				url, err := report.CreateIssue(ctx, p)
-				if err != nil {
-					errf("report: create failed: %v", err)
-					anyFailed = true
-					continue
-				}
-				anyCreated = true
-				fmt.Printf("  ✓ created: %s\n", url)
-			}
-		}
-	}
+	anyCreated, anyFailed := applyReportMatches(
+		ctx,
+		os.Stdout,
+		matches,
+		known,
+		yes,
+		report.CreateIssue,
+		report.CommentOnIssue,
+	)
 	switch {
 	case anyFailed:
 		// At least one op failed; propagate. Use 3 to match the
@@ -222,23 +191,61 @@ func cmdReport(ctx context.Context, args []string) int {
 	return 0
 }
 
-// confirmReport is the per-proposal interactive check. Defaults to
-// YES because the user explicitly invoked `i report` intending to
-// file issues — asking them to type "y" for every proposal after
-// they already chose to report is noise. Pressing Enter (or y / yes)
-// proceeds; only an explicit n / no / anything-else declines.
-func confirmReport(yes bool) bool {
-	if yes {
-		return true
+type reportCreateIssueFunc func(context.Context, report.Proposal) (string, error)
+type reportCommentIssueFunc func(context.Context, int, string) (string, error)
+
+func applyReportMatches(
+	ctx context.Context,
+	out io.Writer,
+	matches []report.Match,
+	known map[string]bool,
+	yes bool,
+	createIssue reportCreateIssueFunc,
+	commentOnIssue reportCommentIssueFunc,
+) (anyCreated, anyFailed bool) {
+	for i, m := range matches {
+		fmt.Fprintf(out, "\n[%d/%d] %s\n", i+1, len(matches), m.Proposal.Title)
+		if m.IsDuplicate {
+			fmt.Fprintf(out, "  duplicate of #%d %q (score %.2f)\n", m.BestExisting.Number, m.BestExisting.Title, m.Score)
+			fmt.Fprintf(out, "  → would comment with: %s\n", trim(m.Proposal.Body, 120))
+			if !yes {
+				fmt.Fprintln(out, "  → dry run only; pass --yes to post the comment")
+				continue
+			}
+			url, err := commentOnIssue(ctx, m.BestExisting.Number, "From `i report`:\n\n"+m.Proposal.Body)
+			if err != nil {
+				errf("report: comment failed: %v", err)
+				anyFailed = true
+				continue
+			}
+			anyCreated = true
+			fmt.Fprintf(out, "  ✓ commented: %s\n", url)
+			continue
+		}
+
+		kept, dropped := report.FilterLabels(m.Proposal.Labels, known)
+		if len(dropped) > 0 {
+			fmt.Fprintf(out, "  (dropping labels not on repo: %v)\n", dropped)
+		}
+		p := m.Proposal
+		p.Labels = kept
+		fmt.Fprintln(out, "  new issue")
+		fmt.Fprintf(out, "  labels: %v\n", p.Labels)
+		fmt.Fprintf(out, "  body: %s\n", trim(p.Body, 200))
+		if !yes {
+			fmt.Fprintln(out, "  → would create a new issue (pass --yes to execute)")
+			continue
+		}
+		url, err := createIssue(ctx, p)
+		if err != nil {
+			errf("report: create failed: %v", err)
+			anyFailed = true
+			continue
+		}
+		anyCreated = true
+		fmt.Fprintf(out, "  ✓ created: %s\n", url)
 	}
-	fmt.Print("  proceed? [Y/n] ")
-	r := bufio.NewReader(os.Stdin)
-	line, _ := r.ReadString('\n')
-	line = strings.TrimSpace(strings.ToLower(line))
-	if line == "" || line == "y" || line == "yes" {
-		return true
-	}
-	return false
+	return anyCreated, anyFailed
 }
 
 func trim(s string, n int) string {
