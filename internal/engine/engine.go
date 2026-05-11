@@ -81,6 +81,7 @@ func (e *Engine) Run(ctx context.Context, prompt string, opts Options) (*Result,
 		BinariesFingerprint:    cache.BinariesFingerprint(pack.AvailableBins),
 		BackendIdentity:        backendCacheIdentity(opts.Backend),
 		PromptTemplateVersion:  model.PromptTemplateVersion,
+		ProjectRCFingerprint:   cache.ProjectRCFingerprint(opts.ProjectRC),
 		UserContextFingerprint: cache.UserContextFingerprint(opts.UserContext),
 	})
 	res.CacheKey = key
