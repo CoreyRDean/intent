@@ -102,36 +102,62 @@ func listDir(raw json.RawMessage) (Result, error) {
 	if args.Path == "" {
 		args.Path = "."
 	}
+	if args.Depth <= 0 {
+		args.Depth = 1
+	}
 	if args.MaxEntries <= 0 {
 		args.MaxEntries = 200
 	}
-	entries, err := os.ReadDir(args.Path)
+	root, err := filepath.Abs(args.Path)
 	if err != nil {
 		return Result{"error": err.Error()}, nil
 	}
-	out := make([]map[string]any, 0, len(entries))
-	for i, e := range entries {
-		if i >= args.MaxEntries {
-			break
+	out := make([]map[string]any, 0, min(args.MaxEntries, 32))
+	truncated := false
+	var walk func(dir string, relDir string, depth int) error
+	walk = func(dir string, relDir string, depth int) error {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return err
 		}
-		info, _ := e.Info()
-		var size int64
-		if info != nil {
-			size = info.Size()
+		for _, e := range entries {
+			if len(out) >= args.MaxEntries {
+				truncated = true
+				return nil
+			}
+			info, _ := e.Info()
+			var size int64
+			if info != nil {
+				size = info.Size()
+			}
+			typ := "file"
+			if e.IsDir() {
+				typ = "dir"
+			} else if info != nil && info.Mode()&os.ModeSymlink != 0 {
+				typ = "symlink"
+			}
+			relPath := e.Name()
+			if relDir != "" {
+				relPath = filepath.Join(relDir, e.Name())
+			}
+			out = append(out, map[string]any{
+				"name": e.Name(),
+				"path": relPath,
+				"type": typ,
+				"size": size,
+			})
+			if depth > 1 && e.IsDir() {
+				if err := walk(filepath.Join(dir, e.Name()), relPath, depth-1); err != nil {
+					return err
+				}
+			}
 		}
-		typ := "file"
-		if e.IsDir() {
-			typ = "dir"
-		} else if info != nil && info.Mode()&os.ModeSymlink != 0 {
-			typ = "symlink"
-		}
-		out = append(out, map[string]any{
-			"name": e.Name(),
-			"type": typ,
-			"size": size,
-		})
+		return nil
 	}
-	return Result{"entries": out, "truncated": len(entries) > args.MaxEntries}, nil
+	if err := walk(root, "", args.Depth); err != nil {
+		return Result{"error": err.Error()}, nil
+	}
+	return Result{"entries": out, "truncated": truncated}, nil
 }
 
 func readFile(raw json.RawMessage) (Result, error) {

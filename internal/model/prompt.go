@@ -7,7 +7,7 @@ import (
 
 // PromptTemplateVersion is bumped on every prompt change. Skill cache keys
 // include this; bumping it invalidates the entire cache.
-const PromptTemplateVersion = "7"
+const PromptTemplateVersion = "8"
 
 // SystemPromptInputs is everything intent injects into the system prompt
 // at request time. Stable across daemon lifetime.
@@ -87,9 +87,11 @@ Tool-use strategy (use these aggressively; each call is cheap):
                         Use this the moment the user mentions a command
                         you don't know. Never guess flags for unknown
                         tools.
-- list_dir(path)      — what files are in this directory? Use before
-                        generating commands that reference "the files"
-                        or "those two files" without names.
+- list_dir(path[, depth]) — what files are in this directory tree? Use
+                        before generating commands that reference "the
+                        files" or "those two files" without names. Raise
+                        depth when you need one or two nested levels of
+                        filenames without guessing them.
 - read_file(path,...) — read text content. Supports start_line/end_line
                         for large files.
 - head_file(path, N)  — first N lines only.

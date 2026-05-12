@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -92,6 +93,76 @@ func TestReadFileLineRange(t *testing.T) {
 		if tl == 0 {
 			t.Errorf("expected total_lines>0 got 0")
 		}
+	}
+}
+
+func TestListDirDepth(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "nested", "deeper"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "root.txt"), []byte("root"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "nested", "child.txt"), []byte("child"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "nested", "deeper", "leaf.txt"), []byte("leaf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := runTool(t, nil, "list_dir", map[string]any{
+		"path":  dir,
+		"depth": 2,
+	})
+	entries, ok := res["entries"].([]map[string]any)
+	if !ok {
+		t.Fatalf("entries type = %T, want []map[string]any", res["entries"])
+	}
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		path, _ := entry["path"].(string)
+		paths = append(paths, path)
+	}
+	if slices.Contains(paths, filepath.Join("nested", "deeper", "leaf.txt")) {
+		t.Fatalf("depth=2 should not include grandchild file, got %v", paths)
+	}
+	for _, want := range []string{"nested", filepath.Join("nested", "child.txt"), "root.txt"} {
+		if !slices.Contains(paths, want) {
+			t.Fatalf("missing %q in %v", want, paths)
+		}
+	}
+}
+
+func TestListDirMaxEntriesTruncatesRecursiveWalk(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a.txt", "nested/b.txt", "nested/c.txt"} {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.WriteFile(path, []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	res := runTool(t, nil, "list_dir", map[string]any{
+		"path":        dir,
+		"depth":       2,
+		"max_entries": 2,
+	})
+	entries, ok := res["entries"].([]map[string]any)
+	if !ok {
+		t.Fatalf("entries type = %T, want []map[string]any", res["entries"])
+	}
+	if len(entries) != 2 {
+		t.Fatalf("len(entries)=%d want 2", len(entries))
+	}
+	if truncated, _ := res["truncated"].(bool); !truncated {
+		t.Fatalf("expected truncated=true, got %+v", res)
 	}
 }
 
