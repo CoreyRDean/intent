@@ -176,7 +176,7 @@ Tools the model may invoke during a multi-step turn. All are read-only (except `
 
 | Name | Arguments | Returns |
 |---|---|---|
-| `list_dir` | `{path: string, depth?: int=1, max_entries?: int=200}` | List of `{name, type, size}` |
+| `list_dir` | `{path: string, depth?: int=1, max_entries?: int=200}` | List of `{name, path, type, size}` relative to the requested directory; `depth>1` recurses |
 | `read_file` | `{path: string, max_bytes?: int=8192, start_line?: int, end_line?: int}` | `{content, truncated, size, total_lines?, start_line?, end_line?}` |
 | `head_file` | `{path: string, lines?: int=50}` | `{lines, total_lines}` |
 | `which` | `{name: string}` | `{found: bool, path?: string}` |
