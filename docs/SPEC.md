@@ -112,7 +112,19 @@ This is the silent contract that makes `i ... | i ... | i ...` work.
 
 When `intent` writes to a pipe, it sets the env var `INTENT_PIPE_FROM=intent` for the child process. When `intent` starts and detects this var on stdin (via parent process inspection or env passthrough through `sh -c`), it auto-enables `--json` for input parsing and `--from-intent` semantics.
 
-The wire format is `{"intent_response": ResponseObject}` — see §2.
+The wire format is a JSON object with at least `intent_response`, plus execution metadata the downstream turn may need for context preservation:
+
+```json
+{
+  "intent_response": ResponseObject,
+  "prompt": "original natural-language request",
+  "cwd": "/absolute/working/directory",
+  "exit_code": 0,
+  "stdout": "captured stdout when execution happened"
+}
+```
+
+`prompt` and `cwd` exist specifically so chained invocations can keep path and target context even when `stdout` only contains bare filenames or other abbreviated output.
 
 ## 2. Model contract
 

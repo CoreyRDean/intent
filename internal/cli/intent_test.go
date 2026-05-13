@@ -74,6 +74,8 @@ func TestFormatStdinForPrompt_FromIntentNonJSON(t *testing.T) {
 
 func TestFormatStdinForPrompt_FromIntentEnvelopeUnpacks(t *testing.T) {
 	envelope := `{
+		"prompt": "list files in ~/dir",
+		"cwd": "/Users/coreyrdean/project",
 		"intent_response": {
 			"intent_summary": "Check disk usage",
 			"approach": "command",
@@ -89,6 +91,12 @@ func TestFormatStdinForPrompt_FromIntentEnvelopeUnpacks(t *testing.T) {
 	got := formatStdinForPrompt(envelope, true)
 	if !strings.Contains(got, "[upstream intent result]") {
 		t.Fatalf("expected envelope framing, got: %q", got)
+	}
+	if !strings.Contains(got, "prompt: list files in ~/dir") {
+		t.Fatalf("expected prompt to be extracted, got: %q", got)
+	}
+	if !strings.Contains(got, "cwd: /Users/coreyrdean/project") {
+		t.Fatalf("expected cwd to be extracted, got: %q", got)
 	}
 	if !strings.Contains(got, "summary: Check disk usage") {
 		t.Fatalf("expected summary to be extracted, got: %q", got)
@@ -108,6 +116,35 @@ func TestFormatStdinForPrompt_FromIntentFallsBackOnNonEnvelopeJSON(t *testing.T)
 	got := formatStdinForPrompt(`{"unrelated":"payload"}`, true)
 	if !strings.Contains(got, "[upstream intent result follows]") {
 		t.Fatalf("expected fallback framing for non-envelope JSON, got: %q", got)
+	}
+}
+
+func TestFormatStdinForPrompt_FromIntentEnvelopeKeepsPathContext(t *testing.T) {
+	envelope := `{
+		"prompt": "list files in ~/dir",
+		"cwd": "/Users/coreyrdean/project",
+		"intent_response": {
+			"intent_summary": "List files in the requested directory.",
+			"approach": "command",
+			"command": "ls ~/dir",
+			"description": "List the files in ~/dir.",
+			"risk": "safe",
+			"expected_runtime": "instant",
+			"confidence": "high"
+		},
+		"exit_code": 0,
+		"stdout": "file.md\n"
+	}`
+	got := formatStdinForPrompt(envelope, true)
+	for _, needle := range []string{
+		"prompt: list files in ~/dir",
+		"cwd: /Users/coreyrdean/project",
+		"command: ls ~/dir",
+		"stdout: file.md",
+	} {
+		if !strings.Contains(got, needle) {
+			t.Fatalf("expected formatted upstream context to contain %q, got: %q", needle, got)
+		}
 	}
 }
 

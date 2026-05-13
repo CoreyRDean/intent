@@ -164,6 +164,14 @@ func TestMockExecuteJSON(t *testing.T) {
 	if strings.TrimSpace(gotStdout) == "" {
 		t.Fatalf("expected JSON field stdout to contain executed command output, got: %#v", result)
 	}
+	gotPrompt, _ := result["prompt"].(string)
+	if gotPrompt != "list files" {
+		t.Fatalf("expected JSON field prompt to preserve the original request, got %#v", result)
+	}
+	gotCWD, _ := result["cwd"].(string)
+	if strings.TrimSpace(gotCWD) == "" {
+		t.Fatalf("expected JSON field cwd to preserve the execution cwd, got %#v", result)
+	}
 }
 
 func TestSafetyHardRejectDispatch(t *testing.T) {
