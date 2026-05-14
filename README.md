@@ -110,6 +110,8 @@ When chaining intent into intent, `INTENT_PIPE_FROM=intent` is used to auto-enab
 INTENT_PIPE_FROM=intent i --from-intent --json "if upstream output indicates failure, exit 1 else 0"
 ```
 
+The inter-intent JSON envelope also carries the upstream prompt and cwd alongside the response metadata and captured stdout, so downstream invocations can keep path context instead of treating bare filenames as if they came from the current directory.
+
 ---
 
 ## Managing models

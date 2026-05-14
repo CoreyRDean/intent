@@ -336,7 +336,7 @@ func cmdIntent(ctx context.Context, args []string) int {
 
 	// --json short-circuit (no execution, just emit).
 	if fl.json && resp.Approach != model.ApproachCommand && resp.Approach != model.ApproachScript {
-		emitJSON(resp, nil, 0)
+		emitJSON(resp, fl.prompt, nil, 0)
 		return 0
 	}
 
@@ -344,7 +344,7 @@ func cmdIntent(ctx context.Context, args []string) int {
 	switch resp.Approach {
 	case model.ApproachInform:
 		if fl.json {
-			emitJSON(resp, []byte(resp.StdoutToUser), 0)
+			emitJSON(resp, fl.prompt, []byte(resp.StdoutToUser), 0)
 		} else {
 			fmt.Print(resp.StdoutToUser)
 		}
@@ -381,7 +381,7 @@ func cmdIntent(ctx context.Context, args []string) int {
 
 	if fl.explain {
 		if fl.json {
-			emitJSON(resp, nil, 0)
+			emitJSON(resp, fl.prompt, nil, 0)
 		} else if !fl.quiet {
 			renderProposal(resp, res.CacheHit, style)
 			fmt.Fprintln(os.Stderr, style.Dim("  --explain: not executing."))
@@ -405,7 +405,7 @@ func cmdIntent(ctx context.Context, args []string) int {
 		if !fl.quiet {
 			fmt.Fprintln(os.Stderr, style.Dim("  --dry: not executing."))
 		} else if fl.json {
-			emitJSON(resp, nil, 0)
+			emitJSON(resp, fl.prompt, nil, 0)
 		} else {
 			// Non-TTY --dry: print the command to stdout so callers can
 			// still capture it.
@@ -510,7 +510,7 @@ execute:
 	}
 
 	if fl.json {
-		emitJSON(resp, stdoutBuf.Bytes(), runRes.ExitCode)
+		emitJSON(resp, fl.prompt, stdoutBuf.Bytes(), runRes.ExitCode)
 	}
 
 	auditEntry.UserDecision = decisionLabel(autoConfirm)
@@ -597,10 +597,14 @@ func executeForBool(ctx context.Context, resp *model.Response, fl *intentFlags, 
 	return r, 1
 }
 
-func emitJSON(resp *model.Response, stdoutBytes []byte, exitCode int) {
+func emitJSON(resp *model.Response, prompt string, stdoutBytes []byte, exitCode int) {
 	out := map[string]any{
 		"intent_response": resp,
 		"exit_code":       exitCode,
+		"prompt":          prompt,
+	}
+	if cwd, err := os.Getwd(); err == nil && cwd != "" {
+		out["cwd"] = cwd
 	}
 	if stdoutBytes != nil {
 		out["stdout"] = string(stdoutBytes)
@@ -696,7 +700,9 @@ func truncateForPrompt(s string, max int) string {
 // fromIntent is true it is labelled as upstream-intent context, and if the
 // payload is the JSON envelope emitted by emitJSON we unpack it into a
 // short semantic summary so the downstream prompt does not have to teach
-// the model how to parse the envelope.
+// the model how to parse the envelope. The summary includes the upstream
+// natural-language prompt and cwd so chained invocations can preserve path
+// context even when stdout only contains bare filenames.
 func formatStdinForPrompt(stdinData string, fromIntent bool) string {
 	if stdinData == "" {
 		return ""
@@ -723,14 +729,22 @@ func summarizeIntentEnvelope(data string) (string, bool) {
 		IntentResponse *model.Response `json:"intent_response"`
 		ExitCode       *int            `json:"exit_code"`
 		Stdout         *string         `json:"stdout"`
+		Prompt         string          `json:"prompt"`
+		Cwd            string          `json:"cwd"`
 	}
 	if err := json.Unmarshal([]byte(trimmed), &env); err != nil {
 		return "", false
 	}
-	if env.IntentResponse == nil && env.ExitCode == nil && env.Stdout == nil {
+	if env.IntentResponse == nil && env.ExitCode == nil && env.Stdout == nil && env.Prompt == "" && env.Cwd == "" {
 		return "", false
 	}
 	var b strings.Builder
+	if env.Prompt != "" {
+		fmt.Fprintf(&b, "  prompt: %s\n", env.Prompt)
+	}
+	if env.Cwd != "" {
+		fmt.Fprintf(&b, "  cwd: %s\n", env.Cwd)
+	}
 	if env.IntentResponse != nil {
 		if env.IntentResponse.IntentSummary != "" {
 			fmt.Fprintf(&b, "  summary: %s\n", env.IntentResponse.IntentSummary)
