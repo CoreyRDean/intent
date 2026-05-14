@@ -153,6 +153,11 @@ func daemonRunForeground(ctx context.Context, dirs state.Dirs, cfg *config.Confi
 	if id == "" {
 		id = models.DefaultID
 	}
+	host, port, err := resolveLocalDaemonEndpoint(cfg)
+	if err != nil {
+		errf("daemon: %v", err)
+		return 1
+	}
 	m := cat.Get(id)
 	if m == nil {
 		errf("daemon: current model %q not in catalog; run `i model list` and `i model use <id>`", id)
@@ -178,16 +183,8 @@ func daemonRunForeground(ctx context.Context, dirs state.Dirs, cfg *config.Confi
 	}
 	defer logF.Close()
 
-	port := cfg.Raw["daemon.port"]
-	if port == "" {
-		port = "18080"
-	}
 	portNum := 18080
 	fmt.Sscanf(port, "%d", &portNum)
-	host := cfg.Raw["daemon.host"]
-	if host == "" {
-		host = "127.0.0.1"
-	}
 
 	launcher := daemon.NewLauncher(mgr.LlamafilePath(), modelPath, host, portNum)
 	launcher.StdoutLog = logF

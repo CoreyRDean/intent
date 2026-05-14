@@ -63,6 +63,10 @@ func cmdConfig(_ context.Context, args []string) int {
 			errf("usage: i config set <key> <value>")
 			return 1
 		}
+		if err := validateConfigValue(args[1], args[2]); err != nil {
+			errf("config: %v", err)
+			return 1
+		}
 		cfg, err := config.Load(dirs.ConfigPath())
 		if err != nil {
 			errf("config: %v", err)
@@ -78,6 +82,16 @@ func cmdConfig(_ context.Context, args []string) int {
 	default:
 		errf("unknown subcommand: %q", args[0])
 		return 1
+	}
+}
+
+func validateConfigValue(key, value string) error {
+	switch key {
+	case "daemon.host":
+		_, err := normalizeLocalDaemonHost(value)
+		return err
+	default:
+		return nil
 	}
 }
 

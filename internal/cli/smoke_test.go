@@ -298,6 +298,27 @@ func TestConfigRoundTrip(t *testing.T) {
 	}
 }
 
+func TestConfigSetRejectsRemoteDaemonHost(t *testing.T) {
+	stateDir := t.TempDir()
+	cacheDir := t.TempDir()
+	baseEnv := []string{
+		"HOME=" + os.Getenv("HOME"),
+		"PATH=" + os.Getenv("PATH"),
+		"INTENT_STATE_DIR=" + stateDir,
+		"INTENT_CACHE_DIR=" + cacheDir,
+	}
+
+	cmd := exec.Command(testBinary, "config", "set", "daemon.host", "0.0.0.0")
+	cmd.Env = baseEnv
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("expected config set daemon.host to fail, got nil error")
+	}
+	if !strings.Contains(string(out), "loopback only") {
+		t.Fatalf("expected loopback validation error, got %q", string(out))
+	}
+}
+
 func TestConfigPath(t *testing.T) {
 	stdout, _, exitCode := run(t, nil, "config", "path")
 	if exitCode != 0 {
