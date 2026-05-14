@@ -461,6 +461,7 @@ color         = "auto"
 [daemon]
 enabled       = true
 idle_unload_after = "30m"
+host          = "127.0.0.1"       # loopback only; remote hosts are rejected
 
 [cache]
 enabled    = true
@@ -480,6 +481,8 @@ model    = "gpt-4o-mini"
 ```
 
 Project-level `.intentrc` (TOML) overrides global config for invocations whose cwd is at or below the file's directory.
+
+For `llamafile-local`, the daemon-managed model HTTP endpoint is loopback-only by contract. `daemon.host` may be omitted or set to a loopback value such as `127.0.0.1`, `localhost`, or `::1`; non-loopback hosts are rejected.
 
 ## 9. Update channel
 

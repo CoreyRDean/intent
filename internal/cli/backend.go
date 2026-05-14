@@ -38,13 +38,9 @@ func buildBackend(name string, cfg *config.Config, modelOverride string) (model.
 		// fall back to the mock backend so `i hello` doesn't hard-fail
 		// for a brand-new install — instead the mock returns an honest
 		// "the local model isn't installed yet" response.
-		host := cfg.Raw["daemon.host"]
-		if host == "" {
-			host = "127.0.0.1"
-		}
-		port := cfg.Raw["daemon.port"]
-		if port == "" {
-			port = "18080"
+		host, port, err := resolveLocalDaemonEndpoint(cfg)
+		if err != nil {
+			return nil, false, err
 		}
 		endpoint := fmt.Sprintf("http://%s:%s", host, port)
 		if !endpointReachable(endpoint) {

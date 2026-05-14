@@ -59,6 +59,23 @@ func TestBuildBackend_LlamafileLocalFallsBackWhenUnreachable(t *testing.T) {
 	}
 }
 
+func TestBuildBackend_LlamafileLocalRejectsNonLoopbackHost(t *testing.T) {
+	clearBackendEnv(t)
+	cfg := minimalConfig()
+	cfg.Raw["daemon.host"] = "0.0.0.0"
+
+	_, isFallback, err := buildBackend("llamafile-local", cfg, "")
+	if err == nil {
+		t.Fatal("expected error for non-loopback daemon host, got nil")
+	}
+	if isFallback {
+		t.Fatal("invalid daemon host should not silently fall back to mock")
+	}
+	if !strings.Contains(err.Error(), "loopback only") {
+		t.Fatalf("error = %q, want loopback hint", err)
+	}
+}
+
 func TestBuildBackend_UnknownBackendErrors(t *testing.T) {
 	clearBackendEnv(t)
 	_, _, err := buildBackend("nonexistent", minimalConfig(), "")
