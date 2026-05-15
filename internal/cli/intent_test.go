@@ -7,6 +7,57 @@ import (
 	"testing"
 )
 
+func TestApplyIntentTTYDefaults_AutoConfirmsWhenStdoutIsNotTTY(t *testing.T) {
+	fl := &intentFlags{}
+	applyIntentTTYDefaults(fl, false, true)
+	if !fl.yes {
+		t.Fatalf("expected non-TTY stdout to enable auto-confirm semantics")
+	}
+	if !fl.quiet {
+		t.Fatalf("expected non-TTY stdout to force quiet mode")
+	}
+	if fl.stdoutTTY {
+		t.Fatalf("expected stdoutTTY to be recorded as false")
+	}
+	if !fl.stdinTTY {
+		t.Fatalf("expected stdinTTY to be recorded as true")
+	}
+}
+
+func TestApplyIntentTTYDefaults_AutoConfirmsWhenStdinIsPiped(t *testing.T) {
+	fl := &intentFlags{}
+	applyIntentTTYDefaults(fl, true, false)
+	if !fl.yes {
+		t.Fatalf("expected piped stdin to enable auto-confirm semantics")
+	}
+	if !fl.stdoutTTY {
+		t.Fatalf("expected stdoutTTY to be recorded as true")
+	}
+	if fl.stdinTTY {
+		t.Fatalf("expected stdinTTY to be recorded as false")
+	}
+}
+
+func TestCanPromptInteractively_RequiresFullTTYSurface(t *testing.T) {
+	if !canPromptInteractively(true, true, true) {
+		t.Fatalf("expected full TTY surface to allow prompting")
+	}
+	for _, tc := range []struct {
+		name      string
+		stdoutTTY bool
+		stdinTTY  bool
+		stderrTTY bool
+	}{
+		{name: "stdout piped", stdoutTTY: false, stdinTTY: true, stderrTTY: true},
+		{name: "stdin piped", stdoutTTY: true, stdinTTY: false, stderrTTY: true},
+		{name: "stderr redirected", stdoutTTY: true, stdinTTY: true, stderrTTY: false},
+	} {
+		if canPromptInteractively(tc.stdoutTTY, tc.stdinTTY, tc.stderrTTY) {
+			t.Fatalf("expected %s to disable prompting", tc.name)
+		}
+	}
+}
+
 func TestParseIntentFlags_ContextRepeatable(t *testing.T) {
 	fl, err := parseIntentFlags([]string{
 		"--context", "repo=core",
