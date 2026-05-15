@@ -42,6 +42,8 @@ type intentFlags struct {
 	context    stringListFlag
 	n          int
 	prompt     string
+	stdinTTY   bool
+	stdoutTTY  bool
 }
 
 type stringListFlag []string
@@ -53,6 +55,44 @@ func (s *stringListFlag) String() string {
 func (s *stringListFlag) Set(v string) error {
 	*s = append(*s, strings.TrimSpace(v))
 	return nil
+}
+
+func applyIntentTTYDefaults(out *intentFlags, stdoutTTY, stdinTTY bool) {
+	out.stdoutTTY = stdoutTTY
+	out.stdinTTY = stdinTTY
+
+	if !stdoutTTY {
+		out.quiet = true
+	}
+	if out.raw {
+		out.quiet = true
+		// --raw never executes; it just emits the command. No confirmation
+		// needed regardless of risk.
+		out.yes = true
+	}
+	if out.dry {
+		// --dry never executes; bypass confirmation gating.
+		out.yes = true
+	}
+	if out.explain {
+		out.yes = true
+	}
+	if out.boolean && !stdoutTTY {
+		out.quiet = true
+	}
+	// Non-TTY output is the spec-defined "silent" mode and piped stdin
+	// cannot answer a prompt. Both should auto-approve only the same
+	// safe/network risk levels that `--yes` already covers.
+	if !stdoutTTY || !stdinTTY {
+		out.yes = true
+	}
+	if out.ro {
+		out.sandbox = true
+	}
+}
+
+func canPromptInteractively(stdoutTTY, stdinTTY, stderrTTY bool) bool {
+	return stdoutTTY && stdinTTY && stderrTTY
 }
 
 func parseIntentFlags(args []string) (*intentFlags, error) {
@@ -131,43 +171,11 @@ func parseIntentFlags(args []string) (*intentFlags, error) {
 	// Sensible auto-defaults driven by TTY.
 	stdoutTTY := tui.IsTTY(os.Stdout)
 	stdinTTY := tui.IsTTY(os.Stdin)
-	if !stdoutTTY {
-		out.quiet = true
-	}
-	if out.raw {
-		out.quiet = true
-		// --raw never executes; it just emits the command. No confirmation
-		// needed regardless of risk.
-		out.yes = true
-	}
-	if out.dry {
-		// --dry never executes; bypass confirmation gating.
-		out.yes = true
-	}
-	if out.explain {
-		out.yes = true
-	}
-	if out.boolean && !stdoutTTY {
-		out.quiet = true
-	}
 	if !stdinTTY && os.Getenv("INTENT_PIPE_FROM") == "intent" {
 		out.fromIntent = true
 		out.json = true
 	}
-	// Piped stdin means there is no usable TTY to read a y/n from, so
-	// the interactive confirm path would hard-fail every time. The
-	// composability story in the README (`i A | i B`, `cat f | i X`)
-	// only works if piped stdin implies consent for auto-run-eligible
-	// risk levels. This is the same guarantee the user gets from -y:
-	// safe and network auto-run, mutates/destructive/sudo still
-	// refuse because implicit approval through a pipe is not enough
-	// authority for those. See SPEC.md §auto-run for the policy.
-	if !stdinTTY {
-		out.yes = true
-	}
-	if out.ro {
-		out.sandbox = true
-	}
+	applyIntentTTYDefaults(out, stdoutTTY, stdinTTY)
 	return out, nil
 }
 
@@ -265,6 +273,7 @@ func cmdIntent(ctx context.Context, args []string) int {
 	eng := engine.New(store)
 
 	style := tui.DefaultStyle()
+	stderrTTY := tui.IsTTY(os.Stderr)
 	var sp *tui.Spinner
 	// Spinner policy. Render only when stderr is a TTY AND we are sure
 	// no other process is still painting on the same stderr. The only
@@ -274,7 +283,7 @@ func cmdIntent(ctx context.Context, args []string) int {
 	// or named pipe drained to EOF) upstream has either never existed
 	// or has already exited, so it's safe to animate here.
 	// In verbose mode the log stream itself is the progress indicator.
-	if !vl.Enabled() && tui.IsTTY(os.Stderr) && stdinEOF {
+	if !vl.Enabled() && !fl.quiet && stderrTTY && stdinEOF {
 		sp = tui.NewSpinner(style)
 		sp.Start("Invoking...")
 		defer sp.Stop()
@@ -375,7 +384,7 @@ func cmdIntent(ctx context.Context, args []string) int {
 	// about to run -- even when stdout is piped to the next command.
 	// renderProposal writes to stderr only, so whether stdout is a
 	// TTY is irrelevant here; gate on the surface the user can see.
-	if !fl.explain && tui.IsTTY(os.Stderr) {
+	if !fl.explain && !fl.quiet && stderrTTY {
 		renderProposal(resp, res.CacheHit, style)
 	}
 
@@ -426,12 +435,13 @@ func cmdIntent(ctx context.Context, args []string) int {
 	autoConfirm := (fl.yes || cfg.AutoRun) && resp.Risk.AutoRunEligible()
 	decision := tui.DecisionConfirm
 	if !autoConfirm {
-		if !tui.IsTTY(os.Stdin) || !tui.IsTTY(os.Stderr) {
-			// We already promote piped-stdin to --yes for
-			// auto-run-eligible risks. If we still end up here, the
-			// risk is too high to auto-confirm through a pipe (e.g.
-			// mutates/destructive/sudo). Be explicit about why.
-			errf("intent: refusing to auto-run risk=%s without a TTY; re-run interactively or reduce the scope of the request", resp.Risk)
+		if !canPromptInteractively(fl.stdoutTTY, fl.stdinTTY, stderrTTY) {
+			// Non-TTY stdout is spec-defined silent mode and piped stdin
+			// cannot answer a prompt. If we still reach this path, the
+			// risk is too high to auto-confirm implicitly (e.g. mutates,
+			// destructive, sudo). Fail closed instead of prompting on a
+			// partially interactive surface.
+			errf("intent: refusing to auto-run risk=%s without a fully interactive terminal surface; re-run directly or reduce the scope of the request", resp.Risk)
 			auditEntry.UserDecision = "cancelled"
 			if lerr == nil {
 				_ = logger.Append(auditEntry)
