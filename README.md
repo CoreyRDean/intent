@@ -112,6 +112,15 @@ INTENT_PIPE_FROM=intent i --from-intent --json "if upstream output indicates fai
 
 The inter-intent JSON envelope also carries the upstream prompt and cwd alongside the response metadata and captured stdout, so downstream invocations can keep path context instead of treating bare filenames as if they came from the current directory.
 
+Use `--literal` when your prompt starts with a word that is also a subcommand or when later words should stay prompt text instead of being parsed as intent-mode flags.
+
+```sh
+i --dry --json --literal version
+i --literal explain --raw grep output
+```
+
+With `--literal`, everything after the flag is treated as natural-language prompt text.
+
 ---
 
 ## Managing models

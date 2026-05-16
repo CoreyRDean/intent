@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -45,5 +46,27 @@ func TestVersionFlags(t *testing.T) {
 				t.Errorf("args %v: version output is empty", c.args)
 			}
 		})
+	}
+}
+
+func TestRewriteLiteralArgs_NoFlag(t *testing.T) {
+	in := []string{"report", "bug"}
+	got, forced := rewriteLiteralArgs(in)
+	if forced {
+		t.Fatal("rewriteLiteralArgs should not force literal mode without --literal")
+	}
+	if !reflect.DeepEqual(got, in) {
+		t.Fatalf("rewriteLiteralArgs changed args without --literal: got %v want %v", got, in)
+	}
+}
+
+func TestRewriteLiteralArgs_CollapsesTailIntoPrompt(t *testing.T) {
+	got, forced := rewriteLiteralArgs([]string{"--dry", "--json", "--literal", "list", "--raw", "files"})
+	if !forced {
+		t.Fatal("rewriteLiteralArgs should force literal mode when --literal is present")
+	}
+	want := []string{"--dry", "--json", "list --raw files"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("rewriteLiteralArgs mismatch: got %v want %v", got, want)
 	}
 }

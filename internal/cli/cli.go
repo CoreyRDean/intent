@@ -37,8 +37,27 @@ var knownSubcommands = map[string]commandHandler{
 
 type commandHandler func(ctx context.Context, args []string) int
 
+// rewriteLiteralArgs collapses everything after the first --literal flag
+// into one prompt token and reports that dispatcher-level natural-language
+// mode was explicitly requested.
+func rewriteLiteralArgs(args []string) ([]string, bool) {
+	for i, a := range args {
+		if a != "--literal" {
+			continue
+		}
+		out := append([]string{}, args[:i]...)
+		if tail := strings.TrimSpace(strings.Join(args[i+1:], " ")); tail != "" {
+			out = append(out, tail)
+		}
+		return out, true
+	}
+	return args, false
+}
+
 // Run is the program entrypoint. Returns the exit code.
 func Run(ctx context.Context, args []string) int {
+	args, forceLiteral := rewriteLiteralArgs(args)
+
 	// Dispatch top-level flags before stripping so that --version and
 	// --help are not consumed by stripGlobalFlags before they can be matched.
 	if len(args) > 0 {
@@ -73,6 +92,10 @@ func Run(ctx context.Context, args []string) int {
 		l.KV("pid", os.Getpid())
 		l.KV("argv", strings.Join(os.Args, " "))
 		l.KV("cwd", mustCwd())
+	}
+
+	if forceLiteral {
+		return cmdIntent(ctx, args)
 	}
 
 	if h, ok := knownSubcommands[args[0]]; ok {
@@ -158,6 +181,7 @@ Subcommands:
 Flags (in natural-language mode):
   -y, --yes        Auto-confirm safe and network risk levels.
       --dry        Don't execute; print what would happen.
+      --literal    Treat everything after this flag as natural language.
       --sandbox    Execute under a platform sandbox.
       --ro         Cwd bind-mounted read-only (implies --sandbox).
       --json       Emit structured response on stdout.

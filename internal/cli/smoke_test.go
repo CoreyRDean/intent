@@ -112,6 +112,9 @@ func TestHelpFlag(t *testing.T) {
 	if !strings.Contains(stdout, "--from-intent") {
 		t.Fatalf("expected help to include --from-intent flag docs, got: %q", stdout)
 	}
+	if !strings.Contains(stdout, "--literal") {
+		t.Fatalf("expected help to include --literal flag docs, got: %q", stdout)
+	}
 }
 
 func TestNoArgs(t *testing.T) {
@@ -148,6 +151,36 @@ func TestMockDryJSON(t *testing.T) {
 	}
 	if _, ok := result["exit_code"]; !ok {
 		t.Fatalf("expected JSON key 'exit_code', got keys: %v", jsonKeys(result))
+	}
+}
+
+func TestLiteralForcesNaturalLanguageInsteadOfSubcommand(t *testing.T) {
+	stdout, _, exitCode := run(t, []string{"INTENT_FORCE_BACKEND=mock"}, "--dry", "--json", "--literal", "version")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d", exitCode)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("expected valid JSON from natural-language mode, got: %q; err: %v", stdout, err)
+	}
+	gotPrompt, _ := result["prompt"].(string)
+	if gotPrompt != "version" {
+		t.Fatalf("expected prompt to stay in natural-language mode, got %#v", result)
+	}
+}
+
+func TestLiteralKeepsTailFlagsInsidePrompt(t *testing.T) {
+	stdout, _, exitCode := run(t, []string{"INTENT_FORCE_BACKEND=mock"}, "--dry", "--json", "--literal", "list", "--raw", "files")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d", exitCode)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("expected valid JSON from natural-language mode, got: %q; err: %v", stdout, err)
+	}
+	gotPrompt, _ := result["prompt"].(string)
+	if gotPrompt != "list --raw files" {
+		t.Fatalf("expected literal tail to remain in prompt, got %#v", result)
 	}
 }
 

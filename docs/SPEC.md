@@ -15,12 +15,12 @@ The project ships two binaries:
 
 ### 1.2 Invocation modes
 
-`intent` selects a mode by inspecting the first non-flag argument:
+`intent` selects a mode by inspecting the first non-flag argument, unless `--literal` forces natural-language mode:
 
 | Mode | Trigger | Example |
 |---|---|---|
 | **Subcommand** | First non-flag arg matches a known subcommand | `i config get model` |
-| **Natural language** | Any other input | `i check if google's dns is up` |
+| **Natural language** | Any other input, or any argv tail after `--literal` | `i check if google's dns is up` |
 
 There is no "shell" or "REPL" mode in v1. Conversational follow-up (`i and now sort by date`) is single-shot and uses the cached previous turn for context; it is not a persistent session.
 
@@ -59,6 +59,7 @@ Top-level flags that are *not* subcommands but change global behavior:
 |---|---|---|
 | `--yes`, `-y` | off | Auto-confirm `safe` and `network` risk levels. Never auto-confirms `mutates`, `destructive`, or `sudo`. |
 | `--dry` | off | Print what would happen; do not execute. Sets `risk` policy to never run. |
+| `--literal` | off | Treat everything after this flag as natural-language prompt text, even if it looks like a subcommand or another intent-mode flag. |
 | `--sandbox` | off | Execute under platform sandbox (`bwrap` on Linux, `sandbox-exec` on macOS). |
 | `--ro` | off | Cwd bind-mounted read-only inside sandbox. Implies `--sandbox`. |
 | `--json` | auto | Emit structured response on stdout. Auto-on when stdout is not a TTY and stdin is from another `i`. |
